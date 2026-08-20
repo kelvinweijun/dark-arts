@@ -435,8 +435,10 @@ func (b *Beacon) selectEdge(ctx context.Context) {
 	b.log.Warn("no edge reachable, keeping", "edge", cur)
 }
 
-// probeEdge reports whether the edge answers; any HTTP response counts as
-// reachable, only transport errors fail the probe.
+// probeEdge reports whether the edge is usable: /healthz must answer with a
+// 2xx status. A reachable-but-failing endpoint (e.g. the redirector answering
+// 502 while the tunnel is down) does not count, so the beacon falls through
+// to the next candidate.
 func (b *Beacon) probeEdge(ctx context.Context, base string) bool {
 	pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -448,8 +450,8 @@ func (b *Beacon) probeEdge(ctx context.Context, base string) bool {
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
-	return true
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func (b *Beacon) nextDelay() time.Duration {

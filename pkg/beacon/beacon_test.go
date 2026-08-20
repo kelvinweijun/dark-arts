@@ -116,6 +116,52 @@ func TestExecutorKillAndInject(t *testing.T) {
 	}
 }
 
+func TestExecutorPersistValidation(t *testing.T) {
+	res := runTask(t, "persist", []byte(`{"method":"bogus","name":"x"}`))
+	if res.Error == "" {
+		t.Fatal("persist with bogus method must fail")
+	}
+	res = runTask(t, "persist", []byte(`{"method":"reg"}`))
+	if res.Error == "" {
+		t.Fatal("persist without name must fail")
+	}
+	res = runTask(t, "unpersist", []byte(`{"method":"bogus","name":"x"}`))
+	if res.Error == "" {
+		t.Fatal("unpersist with bogus method must fail")
+	}
+}
+
+func TestExecutorUacValidation(t *testing.T) {
+	res := runTask(t, "uac", []byte(`{"method":"bogus","cmd":"whoami"}`))
+	if res.Error == "" {
+		t.Fatal("uac with bogus method must fail")
+	}
+	res = runTask(t, "uac", []byte(`{"method":"fodhelper"}`))
+	if res.Error == "" {
+		t.Fatal("uac without cmd or name must fail")
+	}
+}
+
+func TestExecutorUnknownTask(t *testing.T) {
+	res := runTask(t, "nope", nil)
+	if res.Error == "" {
+		t.Fatal("unknown task type must fail")
+	}
+}
+
+func TestDefaultPersistCmd(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows only")
+	}
+	cmd, err := defaultPersistCmd()
+	if err != nil {
+		t.Fatalf("defaultPersistCmd: %v", err)
+	}
+	if !strings.HasPrefix(cmd, `cmd /c start "" /b "`) || !strings.HasSuffix(cmd, `"`) {
+		t.Fatalf("unexpected default persist cmd: %q", cmd)
+	}
+}
+
 func TestSleepSecondsParsing(t *testing.T) {
 	if secs := sleepSecondsFrom(&tasking.Result{Output: []byte(`{"seconds":3}`)}); secs != 3 {
 		t.Fatalf("expected 3, got %d", secs)
@@ -562,5 +608,31 @@ func TestParseEdges(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestProbeEdgeRequiresHealthyStatus(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad gateway", http.StatusBadGateway)
+	}))
+	defer bad.Close()
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer good.Close()
+	noHealthz := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer noHealthz.Close()
+
+	b := &Beacon{client: &http.Client{Timeout: 5 * time.Second}}
+	if b.probeEdge(context.Background(), bad.URL) {
+		t.Fatal("502 /healthz must not count as a usable edge")
+	}
+	if b.probeEdge(context.Background(), noHealthz.URL) {
+		t.Fatal("404 /healthz must not count as a usable edge")
+	}
+	if !b.probeEdge(context.Background(), good.URL) {
+		t.Fatal("200 /healthz must count as a usable edge")
 	}
 }

