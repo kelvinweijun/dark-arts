@@ -450,6 +450,9 @@ func (r *REPL) setupRedirector(ctx context.Context, args []string) error {
 			edgeHost = edgeHost[i+1:]
 		}
 	}
+	if code == "200" {
+		fmt.Fprintf(r.out, "redirector OK: https://%s:443 -> relay reachable\n", edgeHost)
+	}
 	edgeIP := labIP
 	if reverse {
 		if ip, err := detectLabIP(); err == nil {
