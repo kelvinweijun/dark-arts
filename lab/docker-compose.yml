@@ -1,0 +1,181 @@
+name: darkarts-lab
+
+networks:
+  net_lan:
+    name: darkarts-net-lan
+    ipam:
+      config:
+        - subnet: 10.0.42.0/24
+  net_egress:
+    name: darkarts-net-egress
+    ipam:
+      config:
+        - subnet: 10.0.43.0/24
+
+services:
+  dns:
+    image: internetsystemsconsortium/bind9:9.20
+    container_name: darkarts-dns
+    networks:
+      net_lan:
+        ipv4_address: 10.0.42.200
+    ports:
+      - "127.0.0.1:5553:53/udp"
+      - "127.0.0.1:5553:53/tcp"
+    volumes:
+      - ./dns:/etc/bind
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "+short", "TXT", "_dd.darkarts.lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    container_name: darkarts-minio
+    networks: [net_egress]
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: darkarts
+      MINIO_ROOT_PASSWORD: darkarts-lab
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-o", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  edge:
+    build:
+      context: ..
+      dockerfile: lab/edge/Dockerfile
+    container_name: darkarts-edge
+    networks:
+      net_egress:
+        ipv4_address: 10.0.43.210
+    ports:
+      - "127.0.0.1:8443:8443"
+    environment:
+      DARKARTS_STORE: minio
+      DARKARTS_S3_ENDPOINT: minio:9000
+      DARKARTS_S3_ACCESS_KEY: darkarts
+      DARKARTS_S3_SECRET_KEY: darkarts-lab
+      DARKARTS_S3_BUCKET: darkarts
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8443/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  relay:
+    build:
+      context: ..
+      dockerfile: lab/relay/Dockerfile
+    container_name: darkarts-relay
+    networks:
+      net_lan:
+        ipv4_address: 10.0.42.210
+      net_egress: {}
+    ports:
+      - "7443:7443"
+    environment:
+      DARKARTS_RELAY_LISTEN: ":7443"
+      DARKARTS_UPSTREAM: http://edge:8443
+    depends_on:
+      edge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7443/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  server:
+    build:
+      context: ..
+      dockerfile: lab/server/Dockerfile
+    container_name: darkarts-server
+    networks: [net_egress]
+    ports:
+      - "127.0.0.1:9002:9000"
+    environment:
+      DARKARTS_SERVER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
+      DARKARTS_API_KEY: opkey
+      DARKARTS_EDGE: http://edge:8443
+      DARKARTS_PUMP_INTERVAL: "1"
+    volumes:
+      - server-state:/data
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Public quick tunnel so beacons can reach the lab from any network.
+  # The URL printed in `docker logs darkarts-tunnel` changes whenever this
+  # container restarts; rebake the beacon edge list if it does.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: darkarts-tunnel
+    networks: [net_egress]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://relay:7443"]
+    depends_on:
+      relay:
+        condition: service_healthy
+    restart: unless-stopped
+
+  victim1:
+    build:
+      context: ..
+      dockerfile: lab/victim/Dockerfile
+    container_name: darkarts-victim1
+    networks: [net_lan]
+    extra_hosts:
+      - "edge.darkarts.lab:10.0.42.210"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/index.html"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  victim2:
+    build:
+      context: ..
+      dockerfile: lab/victim/Dockerfile
+    container_name: darkarts-victim2
+    networks: [net_lan]
+    extra_hosts:
+      - "edge.darkarts.lab:10.0.42.210"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/index.html"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  victim3:
+    build:
+      context: ..
+      dockerfile: lab/victim/Dockerfile
+    container_name: darkarts-victim3
+    networks: [net_lan]
+    extra_hosts:
+      - "edge.darkarts.lab:10.0.42.210"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/index.html"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  minio-data:
+  server-state:

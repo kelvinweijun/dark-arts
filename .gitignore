@@ -1,0 +1,12 @@
+bin/
+*.exe
+*.test
+*.out
+*.log
+*.tmp
+*.jnl
+.env
+data/
+lab/minio-data/
+lab/laptop-pkg/
+coverage.html

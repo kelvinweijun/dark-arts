@@ -1,0 +1,12 @@
+$TTL 60	; 1 minute
+darkarts.lab.		IN SOA	ns1.darkarts.lab. admin.darkarts.lab. (
+				2026081504 ; serial
+				120        ; refresh (2 minutes)
+				60         ; retry (1 minute)
+				1209600    ; expire (2 weeks)
+				60         ; minimum (1 minute)
+				)
+			NS	ns1.darkarts.lab.
+_dd.darkarts.lab.	TXT	"ph0-deaddrop-ok"
+edge.darkarts.lab.	A	10.0.42.210
+ns1.darkarts.lab.	A	10.0.42.200
