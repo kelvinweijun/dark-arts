@@ -239,7 +239,7 @@ func (r *REPL) help() {
                         :443 -> lab relay :7443), verify, then build+register the package
                         (-Reverse: lab host is NAT'd; VPS forwards into an outbound SSH
                         tunnel to the lab relay - no inbound ports, works on CG-NAT)
-  package [-Seed h] [-Edge u]   build beacon.exe + register the session (defaults: fresh identity, auto LAN edge)
+  package [-Seed h] [-Edge u] [-Inject] [-NoInject]   build beacon.exe + register the session (defaults: fresh identity, auto LAN edge, inject enabled)
   touch <id> <pub_hex>     register a session (id + agent public key)
   ttps                     list available task types
   task <sid> <type> [k=v]  issue a task (params as key=value pairs)
@@ -511,21 +511,23 @@ func (r *REPL) buildPackage(ctx context.Context, args []string) error {
 		case "-Seed", "-seed":
 			i++
 			if i >= len(args) {
-				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject]")
+				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject] [-Inject]")
 			}
 			cmdArgs = append(cmdArgs, "-Seed", args[i])
 		case "-Edge", "-edge":
 			i++
 			if i >= len(args) {
-				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject]")
+				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject] [-Inject]")
 			}
 			cmdArgs = append(cmdArgs, "-Edge", args[i])
 		case "-NoInject":
 			cmdArgs = append(cmdArgs, "-NoInject")
+		case "-Inject", "-inject":
+			// Inject is enabled by default; this flag is a no-op for explicitness
 		case "-Insecure", "-insecure":
 			cmdArgs = append(cmdArgs, "-Insecure")
 		default:
-			return fmt.Errorf("unknown package flag %q (usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject])", args[i])
+			return fmt.Errorf("unknown package flag %q (usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject] [-Inject])", args[i])
 		}
 	}
 	cmd := exec.CommandContext(ctx, "powershell", cmdArgs...)
