@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"time"
 
-	"darkarts/pkg/deaddrop"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/deaddrop"
+	"dark-arts/pkg/store"
 )
 
 const maxStageSize = 256 << 20

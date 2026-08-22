@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/tasking"
-	"darkarts/pkg/ttp"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/tasking"
+	"dark-arts/pkg/ttp"
 )
 
 var errNoSession = errors.New("server: unknown session")

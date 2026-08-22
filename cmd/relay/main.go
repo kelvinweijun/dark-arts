@@ -12,24 +12,24 @@ import (
 	"syscall"
 	"time"
 
-	"darkarts/internal/version"
-	"darkarts/pkg/logging"
-	"darkarts/pkg/relay"
-	"darkarts/pkg/store"
+	"dark-arts/internal/version"
+	"dark-arts/pkg/logging"
+	"dark-arts/pkg/relay"
+	"dark-arts/pkg/store"
 )
 
 func main() {
-	log := logging.New(os.Getenv("DARKARTS_LOG_LEVEL"))
-	addr := envOr("DARKARTS_RELAY_LISTEN", ":7443")
-	upstreams := splitList(os.Getenv("DARKARTS_UPSTREAM"))
+	log := logging.New(os.Getenv("DARK_ARTS_LOG_LEVEL"))
+	addr := envOr("DARK_ARTS_RELAY_LISTEN", ":7443")
+	upstreams := splitList(os.Getenv("DARK_ARTS_UPSTREAM"))
 	if len(upstreams) == 0 {
-		log.Error("DARKARTS_UPSTREAM required (comma separated edge/relay urls)")
+		log.Error("DARK_ARTS_UPSTREAM required (comma separated edge/relay urls)")
 		os.Exit(2)
 	}
-	st := store.NewFile(envOr("DARKARTS_STORE_DIR", "./data/relay"))
+	st := store.NewFile(envOr("DARK_ARTS_STORE_DIR", "./data/relay"))
 
 	opts := relay.Options{Logger: log}
-	if os.Getenv("DARKARTS_INSECURE") == "true" {
+	if os.Getenv("DARK_ARTS_INSECURE") == "true" {
 		opts.Client = &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
@@ -45,7 +45,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go r.ForwardPendingLoop(ctx, time.Duration(envInt("DARKARTS_RETRY", 30))*time.Second)
+	go r.ForwardPendingLoop(ctx, time.Duration(envInt("DARK_ARTS_RETRY", 30))*time.Second)
 
 	go func() {
 		<-ctx.Done()
@@ -54,7 +54,7 @@ func main() {
 		httpSrv.Shutdown(shutdownCtx)
 	}()
 
-	cert, key := os.Getenv("DARKARTS_TLS_CERT"), os.Getenv("DARKARTS_TLS_KEY")
+	cert, key := os.Getenv("DARK_ARTS_TLS_CERT"), os.Getenv("DARK_ARTS_TLS_KEY")
 	var serveErr error
 	if cert != "" && key != "" {
 		log.Info("relay serving TLS")

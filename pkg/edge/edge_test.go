@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/store"
 )
 
 func newTestServer(t *testing.T, st store.Store) *httptest.Server {

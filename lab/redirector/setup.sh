@@ -17,7 +17,7 @@ DOMAIN="${2:-}"
 FWD_PORT=7443
 
 # The lab host's firewall must allow inbound TCP 7443 from this VPS
-# (Windows: New-NetFirewallRule -DisplayName "darkarts-relay" -Direction Inbound
+# (Windows: New-NetFirewallRule -DisplayName "dark-arts-relay" -Direction Inbound
 #  -Protocol TCP -LocalPort 7443 -Action Allow).
 
 # Run privileged commands through sudo unless we are already root
@@ -42,7 +42,7 @@ else
     exit 1
 fi
 
-CONF=/etc/nginx/sites-available/darkarts-redirector
+CONF=/etc/nginx/sites-available/dark-arts-redirector
 
 if [ -n "$DOMAIN" ]; then
     echo "== requesting Let's Encrypt cert for $DOMAIN =="
@@ -73,7 +73,7 @@ server {
 EOF
 fi
 
-$SUDO ln -sf "$CONF" /etc/nginx/sites-enabled/darkarts-redirector
+$SUDO ln -sf "$CONF" /etc/nginx/sites-enabled/dark-arts-redirector
 $SUDO rm -f /etc/nginx/sites-enabled/default
 $SUDO nginx -t
 $SUDO systemctl enable nginx

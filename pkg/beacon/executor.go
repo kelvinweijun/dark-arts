@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/tasking"
 )
 
 type Executor struct {

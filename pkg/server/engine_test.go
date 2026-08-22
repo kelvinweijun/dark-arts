@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/tasking"
 )
 
 func testPair(t *testing.T) (*Engine, *crypto.Identity, *crypto.Session) {

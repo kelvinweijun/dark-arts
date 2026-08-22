@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"darkarts/pkg/evasion"
-	"darkarts/pkg/sleepmask"
+	"dark-arts/pkg/evasion"
+	"dark-arts/pkg/sleepmask"
 )
 
 func callFn(fn uintptr, a, b, c uintptr) uintptr

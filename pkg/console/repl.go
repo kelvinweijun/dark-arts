@@ -17,7 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"darkarts/pkg/server"
+	"dark-arts/pkg/server"
 )
 
 type REPL struct {

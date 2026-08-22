@@ -24,7 +24,7 @@ if errorlevel 1 (
 
 if %CLEAN%==1 (
   echo [4/4] clean mode: wiping volumes and local state...
-  docker volume rm darkarts-lab_minio-data darkarts-lab_server-state >nul 2>&1
+  docker volume rm dark-arts-lab_minio-data dark-arts-lab_server-state >nul 2>&1
   if errorlevel 1 echo   warning: volume removal failed (containers may still hold them - retry after the stack is down)
   if exist "..\data\beacon" rmdir /s /q "..\data\beacon"
   if exist "..\data\server\state.json" del /q "..\data\server\state.json"

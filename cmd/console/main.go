@@ -6,16 +6,16 @@ import (
 	"os/signal"
 	"syscall"
 
-	"darkarts/internal/version"
-	"darkarts/pkg/console"
-	"darkarts/pkg/logging"
+	"dark-arts/internal/version"
+	"dark-arts/pkg/console"
+	"dark-arts/pkg/logging"
 )
 
 func main() {
-	log := logging.New(os.Getenv("DARKARTS_LOG_LEVEL"))
-	serverURL := envOr("DARKARTS_SERVER_URL", "http://127.0.0.1:9000")
-	apiKey := os.Getenv("DARKARTS_API_KEY")
-	opID := envOr("DARKARTS_OP_ID", "op-console")
+	log := logging.New(os.Getenv("DARK_ARTS_LOG_LEVEL"))
+	serverURL := envOr("DARK_ARTS_SERVER_URL", "http://127.0.0.1:9000")
+	apiKey := os.Getenv("DARK_ARTS_API_KEY")
+	opID := envOr("DARK_ARTS_OP_ID", "op-console")
 
 	client := console.New(serverURL, apiKey)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

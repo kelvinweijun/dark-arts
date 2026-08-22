@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/deaddrop"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/deaddrop"
+	"dark-arts/pkg/store"
 )
 
 func Publish(ctx context.Context, m *Manifest, blob []byte, dd deaddrop.Resolver, st store.Store) (manifestRef string, err error) {

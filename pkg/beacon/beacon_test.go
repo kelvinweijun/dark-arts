@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/edge"
-	"darkarts/pkg/server"
-	"darkarts/pkg/store"
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/edge"
+	"dark-arts/pkg/server"
+	"dark-arts/pkg/store"
+	"dark-arts/pkg/tasking"
 )
 
 func runTask(t *testing.T, taskType string, payload []byte) *tasking.Result {

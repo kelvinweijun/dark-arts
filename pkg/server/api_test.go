@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"darkarts/pkg/crypto"
+	"dark-arts/pkg/crypto"
 	"golang.org/x/net/websocket"
 )
 

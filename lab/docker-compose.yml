@@ -1,13 +1,13 @@
-name: darkarts-lab
+name: dark-arts-lab
 
 networks:
   net_lan:
-    name: darkarts-net-lan
+    name: dark-arts-net-lan
     ipam:
       config:
         - subnet: 10.0.42.0/24
   net_egress:
-    name: darkarts-net-egress
+    name: dark-arts-net-egress
     ipam:
       config:
         - subnet: 10.0.43.0/24
@@ -15,7 +15,7 @@ networks:
 services:
   dns:
     image: internetsystemsconsortium/bind9:9.20
-    container_name: darkarts-dns
+    container_name: dark-arts-dns
     networks:
       net_lan:
         ipv4_address: 10.0.42.200
@@ -32,14 +32,14 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: darkarts-minio
+    container_name: dark-arts-minio
     networks: [net_egress]
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     environment:
       MINIO_ROOT_USER: darkarts
-      MINIO_ROOT_PASSWORD: darkarts-lab
+      MINIO_ROOT_PASSWORD: dark-arts-lab
     command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio-data:/data
@@ -53,18 +53,18 @@ services:
     build:
       context: ..
       dockerfile: lab/edge/Dockerfile
-    container_name: darkarts-edge
+    container_name: dark-arts-edge
     networks:
       net_egress:
         ipv4_address: 10.0.43.210
     ports:
       - "127.0.0.1:8443:8443"
     environment:
-      DARKARTS_STORE: minio
-      DARKARTS_S3_ENDPOINT: minio:9000
-      DARKARTS_S3_ACCESS_KEY: darkarts
-      DARKARTS_S3_SECRET_KEY: darkarts-lab
-      DARKARTS_S3_BUCKET: darkarts
+      DARK_ARTS_STORE: minio
+      DARK_ARTS_S3_ENDPOINT: minio:9000
+      DARK_ARTS_S3_ACCESS_KEY: darkarts
+      DARK_ARTS_S3_SECRET_KEY: dark-arts-lab
+      DARK_ARTS_S3_BUCKET: darkarts
     depends_on:
       minio:
         condition: service_healthy
@@ -78,7 +78,7 @@ services:
     build:
       context: ..
       dockerfile: lab/relay/Dockerfile
-    container_name: darkarts-relay
+    container_name: dark-arts-relay
     networks:
       net_lan:
         ipv4_address: 10.0.42.210
@@ -86,8 +86,8 @@ services:
     ports:
       - "7443:7443"
     environment:
-      DARKARTS_RELAY_LISTEN: ":7443"
-      DARKARTS_UPSTREAM: http://edge:8443
+      DARK_ARTS_RELAY_LISTEN: ":7443"
+      DARK_ARTS_UPSTREAM: http://edge:8443
     depends_on:
       edge:
         condition: service_healthy
@@ -101,15 +101,15 @@ services:
     build:
       context: ..
       dockerfile: lab/server/Dockerfile
-    container_name: darkarts-server
+    container_name: dark-arts-server
     networks: [net_egress]
     ports:
       - "127.0.0.1:9002:9000"
     environment:
-      DARKARTS_SERVER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
-      DARKARTS_API_KEY: opkey
-      DARKARTS_EDGE: http://edge:8443
-      DARKARTS_PUMP_INTERVAL: "1"
+      DARK_ARTS_SERVER_SEED: "0101010101010101010101010101010101010101010101010101010101010101"
+      DARK_ARTS_API_KEY: opkey
+      DARK_ARTS_EDGE: http://edge:8443
+      DARK_ARTS_PUMP_INTERVAL: "1"
     volumes:
       - server-state:/data
     depends_on:
@@ -122,11 +122,11 @@ services:
       retries: 12
 
   # Public quick tunnel so beacons can reach the lab from any network.
-  # The URL printed in `docker logs darkarts-tunnel` changes whenever this
+  # The URL printed in `docker logs dark-arts-tunnel` changes whenever this
   # container restarts; rebake the beacon edge list if it does.
   tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: darkarts-tunnel
+    container_name: dark-arts-tunnel
     networks: [net_egress]
     command: ["tunnel", "--no-autoupdate", "--url", "http://relay:7443"]
     depends_on:
@@ -138,7 +138,7 @@ services:
     build:
       context: ..
       dockerfile: lab/victim/Dockerfile
-    container_name: darkarts-victim1
+    container_name: dark-arts-victim1
     networks: [net_lan]
     extra_hosts:
       - "edge.darkarts.lab:10.0.42.210"
@@ -152,7 +152,7 @@ services:
     build:
       context: ..
       dockerfile: lab/victim/Dockerfile
-    container_name: darkarts-victim2
+    container_name: dark-arts-victim2
     networks: [net_lan]
     extra_hosts:
       - "edge.darkarts.lab:10.0.42.210"
@@ -166,7 +166,7 @@ services:
     build:
       context: ..
       dockerfile: lab/victim/Dockerfile
-    container_name: darkarts-victim3
+    container_name: dark-arts-victim3
     networks: [net_lan]
     extra_hosts:
       - "edge.darkarts.lab:10.0.42.210"

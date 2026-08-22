@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	"darkarts/pkg/crypto"
+	"dark-arts/pkg/crypto"
 )
 
 type Pump struct {

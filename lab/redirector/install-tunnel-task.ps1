@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$UserHost,
-    [string]$TaskName = "darkarts-reverse-tunnel"
+    [string]$TaskName = "dark-arts-reverse-tunnel"
 )
 $ErrorActionPreference = "Stop"
 $tunnel = Join-Path $PSScriptRoot "tunnel.cmd"

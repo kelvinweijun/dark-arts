@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"darkarts/pkg/server"
-	"darkarts/pkg/tasking"
-	"darkarts/pkg/ttp"
+	"dark-arts/pkg/server"
+	"dark-arts/pkg/tasking"
+	"dark-arts/pkg/ttp"
 	"golang.org/x/net/websocket"
 )
 

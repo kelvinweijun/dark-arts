@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"darkarts/pkg/inject"
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/inject"
+	"dark-arts/pkg/tasking"
 )
 
 func (e *Executor) runInject(payload []byte, res *tasking.Result) {

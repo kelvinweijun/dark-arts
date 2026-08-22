@@ -38,14 +38,14 @@ echo === READY ===
 echo   server API  : http://127.0.0.1:9002   (Bearer key: opkey)
 echo   relay       : http://127.0.0.1:7443   (beacon path)
 echo   edge        : http://127.0.0.1:8443
-echo   minio       : http://127.0.0.1:9001   (darkarts / darkarts-lab)
+echo   minio       : http://127.0.0.1:9001   (darkarts / dark-arts-lab)
 echo   beacon pkg  : lab\laptop-pkg\beacon.exe  (double-click on target laptop)
 echo.
 echo Sessions:
 curl -s -m 5 -H "Authorization: Bearer opkey" http://127.0.0.1:9002/api/v1/sessions
 echo.
 echo Reverse tunnel:
-powershell -NoProfile -Command "if (Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'ssh.exe' -and $_.CommandLine -match '7443' }) { '  tunnel already running' } else { & schtasks /Run /TN darkarts-reverse-tunnel 2>$null; if ($LASTEXITCODE -eq 0) { '  started scheduled tunnel task' } else { '  no tunnel running and no tunnel task installed - start one in the console:' ; '  dark-arts> tunnel <user@vps>' } }"
+powershell -NoProfile -Command "if (Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'ssh.exe' -and $_.CommandLine -match '7443' }) { '  tunnel already running' } else { & schtasks /Run /TN dark-arts-reverse-tunnel 2>$null; if ($LASTEXITCODE -eq 0) { '  started scheduled tunnel task' } else { '  no tunnel running and no tunnel task installed - start one in the console:' ; '  dark-arts> tunnel <user@vps>' } }"
 echo.
 echo Open the operator console with:  lab\console.cmd
 echo.

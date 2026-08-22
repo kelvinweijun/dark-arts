@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/tasking"
 )
 
 var (

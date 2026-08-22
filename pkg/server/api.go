@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"darkarts/pkg/ttp"
+	"dark-arts/pkg/ttp"
 	"golang.org/x/net/websocket"
 )
 

@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/mesh"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/mesh"
+	"dark-arts/pkg/store"
 )
 
 var sidRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)

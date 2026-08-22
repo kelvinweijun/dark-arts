@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/deaddrop"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/deaddrop"
 )
 
 const manifestVersion = 1

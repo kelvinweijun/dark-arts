@@ -2,7 +2,7 @@
 
 package beacon
 
-import "darkarts/pkg/tasking"
+import "dark-arts/pkg/tasking"
 
 func (e *Executor) runInject(payload []byte, res *tasking.Result) {
 	res.Error = "beacon: inject support not compiled in"

@@ -9,15 +9,15 @@ import (
 )
 
 func TestMinIOStoreIntegration(t *testing.T) {
-	endpoint := os.Getenv("DARKARTS_S3_ENDPOINT")
+	endpoint := os.Getenv("DARK_ARTS_S3_ENDPOINT")
 	if endpoint == "" {
-		t.Skip("DARKARTS_S3_ENDPOINT not set; requires running MinIO (docker lab)")
+		t.Skip("DARK_ARTS_S3_ENDPOINT not set; requires running MinIO (docker lab)")
 	}
-	access := os.Getenv("DARKARTS_S3_ACCESS_KEY")
-	secret := os.Getenv("DARKARTS_S3_SECRET_KEY")
-	bucket := os.Getenv("DARKARTS_S3_BUCKET")
+	access := os.Getenv("DARK_ARTS_S3_ACCESS_KEY")
+	secret := os.Getenv("DARK_ARTS_S3_SECRET_KEY")
+	bucket := os.Getenv("DARK_ARTS_S3_BUCKET")
 	if access == "" || secret == "" || bucket == "" {
-		t.Fatal("DARKARTS_S3_ACCESS_KEY, DARKARTS_S3_SECRET_KEY, DARKARTS_S3_BUCKET required")
+		t.Fatal("DARK_ARTS_S3_ACCESS_KEY, DARK_ARTS_S3_SECRET_KEY, DARK_ARTS_S3_BUCKET required")
 	}
 
 	m, err := NewMinIO(endpoint, access, secret, bucket, false)

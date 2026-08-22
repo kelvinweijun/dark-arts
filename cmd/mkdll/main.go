@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"os"
 
-	"darkarts/pkg/reflective"
+	"dark-arts/pkg/reflective"
 )
 
 func main() {

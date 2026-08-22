@@ -1,4 +1,4 @@
-module darkarts
+module dark-arts
 
 go 1.26
 

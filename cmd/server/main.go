@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	"darkarts/internal/version"
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/logging"
-	"darkarts/pkg/server"
+	"dark-arts/internal/version"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/logging"
+	"dark-arts/pkg/server"
 )
 
 func main() {
-	log := logging.New(os.Getenv("DARKARTS_LOG_LEVEL"))
+	log := logging.New(os.Getenv("DARK_ARTS_LOG_LEVEL"))
 
 	ident, err := serverIdentity()
 	if err != nil {
@@ -28,9 +28,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	engine := server.NewEngineWithState(ident, filepath.Join(envOr("DARKARTS_STATE_DIR", "./data/server"), "state.json"))
-	apiKey := os.Getenv("DARKARTS_API_KEY")
-	addr := envOr("DARKARTS_LISTEN", ":9000")
+	engine := server.NewEngineWithState(ident, filepath.Join(envOr("DARK_ARTS_STATE_DIR", "./data/server"), "state.json"))
+	apiKey := os.Getenv("DARK_ARTS_API_KEY")
+	addr := envOr("DARK_ARTS_LISTEN", ":9000")
 
 	httpSrv := &http.Server{
 		Addr:              addr,
@@ -42,13 +42,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if edgeURL := os.Getenv("DARKARTS_EDGE"); edgeURL != "" {
+	if edgeURL := os.Getenv("DARK_ARTS_EDGE"); edgeURL != "" {
 		client := &http.Client{Timeout: 30 * time.Second}
-		if os.Getenv("DARKARTS_INSECURE") == "true" {
+		if os.Getenv("DARK_ARTS_INSECURE") == "true" {
 			client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 		}
 		pump := server.NewPumpWithClient(engine, edgeURL, log, client)
-		interval := envInt("DARKARTS_PUMP_INTERVAL", 5)
+		interval := envInt("DARK_ARTS_PUMP_INTERVAL", 5)
 		go pump.Loop(ctx, time.Duration(interval)*time.Second)
 		log.Info("server pump running", "edge", edgeURL, "interval", interval)
 	}
@@ -67,7 +67,7 @@ func main() {
 }
 
 func serverIdentity() (*crypto.Identity, error) {
-	seedHex := os.Getenv("DARKARTS_SERVER_SEED")
+	seedHex := os.Getenv("DARK_ARTS_SERVER_SEED")
 	if seedHex == "" {
 		return crypto.NewIdentity()
 	}

@@ -5,8 +5,8 @@ package inject
 import (
 	"errors"
 
-	"darkarts/pkg/evasion"
-	"darkarts/pkg/sleepmask"
+	"dark-arts/pkg/evasion"
+	"dark-arts/pkg/sleepmask"
 )
 
 const (

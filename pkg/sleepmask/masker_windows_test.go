@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"testing"
 
-	"darkarts/pkg/evasion"
+	"dark-arts/pkg/evasion"
 )
 
 func TestMaskRoundTrip(t *testing.T) {

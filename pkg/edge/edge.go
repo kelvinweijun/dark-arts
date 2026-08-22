@@ -12,8 +12,8 @@ import (
 	"sort"
 	"strconv"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/store"
 )
 
 var sidRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)

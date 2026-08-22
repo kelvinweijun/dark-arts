@@ -2,7 +2,7 @@
 
 package beacon
 
-import "darkarts/pkg/tasking"
+import "dark-arts/pkg/tasking"
 
 func (e *Executor) runPersist(payload []byte, res *tasking.Result) {
 	res.Error = "beacon: persistence is only supported on windows"

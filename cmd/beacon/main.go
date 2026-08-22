@@ -17,13 +17,13 @@ import (
 	"syscall"
 	"time"
 
-	"darkarts/internal/version"
-	"darkarts/pkg/beacon"
-	"darkarts/pkg/logging"
+	"dark-arts/internal/version"
+	"dark-arts/pkg/beacon"
+	"dark-arts/pkg/logging"
 )
 
 // Baked at build time with -ldflags "-X main.cfg...=..." so the binary is
-// self-contained; DARKARTS_* environment variables still take precedence.
+// self-contained; DARK_ARTS_* environment variables still take precedence.
 var (
 	cfgSeed      string
 	cfgServerPub string
@@ -41,32 +41,32 @@ func main() {
 		os.Exit(uacRun())
 	}
 
-	log := logging.New(os.Getenv("DARKARTS_LOG_LEVEL"))
+	log := logging.New(os.Getenv("DARK_ARTS_LOG_LEVEL"))
 	if cfgLogFile != "" {
 		if f, err := os.OpenFile(cfgLogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-			log = logging.NewWith(f, os.Getenv("DARKARTS_LOG_LEVEL"))
+			log = logging.NewWith(f, os.Getenv("DARK_ARTS_LOG_LEVEL"))
 		}
 	}
 
-	seed := envOr("DARKARTS_SEED", cfgSeed)
-	serverPubHex := envOr("DARKARTS_SERVER_PUB", cfgServerPub)
-	edgeURL := envOr("DARKARTS_EDGE", cfgEdge)
+	seed := envOr("DARK_ARTS_SEED", cfgSeed)
+	serverPubHex := envOr("DARK_ARTS_SERVER_PUB", cfgServerPub)
+	edgeURL := envOr("DARK_ARTS_EDGE", cfgEdge)
 	if seed == "" || serverPubHex == "" || edgeURL == "" {
 		fmt.Fprintln(os.Stderr, "beacon: seed, server pub and edge are required (env or baked build config)")
 		os.Exit(2)
 	}
 	serverPub, err := hex.DecodeString(serverPubHex)
 	if err != nil || len(serverPub) == 0 {
-		fmt.Fprintln(os.Stderr, "beacon: DARKARTS_SERVER_PUB must be hex")
+		fmt.Fprintln(os.Stderr, "beacon: DARK_ARTS_SERVER_PUB must be hex")
 		os.Exit(2)
 	}
-	sleepSecs := envIntOr("DARKARTS_SLEEP", cfgSleepSecs, 60)
-	jitter := envFloatOr("DARKARTS_JITTER", cfgJitter, 0.2)
-	taskTimeoutSecs := envInt("DARKARTS_TASK_TIMEOUT", 30)
-	sleepMask := os.Getenv("DARKARTS_SLEEP_MASK") == "true" || cfgSleepMask == "true"
+	sleepSecs := envIntOr("DARK_ARTS_SLEEP", cfgSleepSecs, 60)
+	jitter := envFloatOr("DARK_ARTS_JITTER", cfgJitter, 0.2)
+	taskTimeoutSecs := envInt("DARK_ARTS_TASK_TIMEOUT", 30)
+	sleepMask := os.Getenv("DARK_ARTS_SLEEP_MASK") == "true" || cfgSleepMask == "true"
 
 	client := &http.Client{Timeout: time.Duration(taskTimeoutSecs+5) * time.Second}
-	if os.Getenv("DARKARTS_INSECURE") == "true" || cfgInsecure == "true" {
+	if os.Getenv("DARK_ARTS_INSECURE") == "true" || cfgInsecure == "true" {
 		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
 
@@ -74,15 +74,15 @@ func main() {
 		SeedHex:     seed,
 		ServerPub:   serverPub,
 		EdgeURL:     edgeURL,
-		SID:         envOr("DARKARTS_SID", cfgSID),
+		SID:         envOr("DARK_ARTS_SID", cfgSID),
 		Sleep:       time.Duration(sleepSecs) * time.Second,
 		Jitter:      jitter,
 		TaskTimeout: time.Duration(taskTimeoutSecs) * time.Second,
-		UserAgent:   os.Getenv("DARKARTS_UA"),
-		Mimic:       os.Getenv("DARKARTS_MIMIC") == "true",
-		Noise:       os.Getenv("DARKARTS_NOISE") == "true",
+		UserAgent:   os.Getenv("DARK_ARTS_UA"),
+		Mimic:       os.Getenv("DARK_ARTS_MIMIC") == "true",
+		Noise:       os.Getenv("DARK_ARTS_NOISE") == "true",
 		SleepMask:   sleepMask,
-		StatePath:   filepath.Join(envOr("DARKARTS_STATE_DIR", "./data/beacon"), "state.json"),
+		StatePath:   filepath.Join(envOr("DARK_ARTS_STATE_DIR", "./data/beacon"), "state.json"),
 		Log:         log,
 		HTTP:        client,
 	})

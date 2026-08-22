@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"darkarts/pkg/beacon"
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/edge"
-	"darkarts/pkg/server"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/beacon"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/edge"
+	"dark-arts/pkg/server"
+	"dark-arts/pkg/store"
 )
 
 func testConsole(t *testing.T) (*Client, *server.Engine) {

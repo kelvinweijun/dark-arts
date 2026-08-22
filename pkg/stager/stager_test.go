@@ -8,9 +8,9 @@ import (
 	"errors"
 	"testing"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/deaddrop"
-	"darkarts/pkg/store"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/deaddrop"
+	"dark-arts/pkg/store"
 )
 
 func newEnv(t *testing.T) (*crypto.OperatorKeys, deaddrop.Resolver, store.Store, context.Context) {

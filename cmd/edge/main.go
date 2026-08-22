@@ -8,15 +8,15 @@ import (
 	"os"
 	"time"
 
-	"darkarts/internal/version"
-	"darkarts/pkg/edge"
-	"darkarts/pkg/logging"
-	"darkarts/pkg/store"
+	"dark-arts/internal/version"
+	"dark-arts/pkg/edge"
+	"dark-arts/pkg/logging"
+	"dark-arts/pkg/store"
 )
 
 func main() {
-	log := logging.New(os.Getenv("DARKARTS_LOG_LEVEL"))
-	addr := envOr("DARKARTS_LISTEN", ":8443")
+	log := logging.New(os.Getenv("DARK_ARTS_LOG_LEVEL"))
+	addr := envOr("DARK_ARTS_LISTEN", ":8443")
 
 	st, err := newStore(log)
 	if err != nil {
@@ -26,11 +26,11 @@ func main() {
 
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           edge.New(st, edge.Options{Logger: log, CoverHTML: os.Getenv("DARKARTS_COVER_HTML")}).Handler(),
+		Handler:           edge.New(st, edge.Options{Logger: log, CoverHTML: os.Getenv("DARK_ARTS_COVER_HTML")}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Info("dark-arts edge starting", "version", version.Version, "addr", addr)
-	cert, key := os.Getenv("DARKARTS_TLS_CERT"), os.Getenv("DARKARTS_TLS_KEY")
+	cert, key := os.Getenv("DARK_ARTS_TLS_CERT"), os.Getenv("DARK_ARTS_TLS_KEY")
 	var serveErr error
 	if cert != "" && key != "" {
 		log.Info("edge serving TLS")
@@ -45,14 +45,14 @@ func main() {
 }
 
 func newStore(log *slog.Logger) (store.Store, error) {
-	switch os.Getenv("DARKARTS_STORE") {
+	switch os.Getenv("DARK_ARTS_STORE") {
 	case "minio":
 		m, err := store.NewMinIO(
-			envOr("DARKARTS_S3_ENDPOINT", "minio:9000"),
-			envOr("DARKARTS_S3_ACCESS_KEY", "darkarts"),
-			envOr("DARKARTS_S3_SECRET_KEY", "darkarts-lab"),
-			envOr("DARKARTS_S3_BUCKET", "darkarts"),
-			os.Getenv("DARKARTS_S3_SECURE") == "true",
+			envOr("DARK_ARTS_S3_ENDPOINT", "minio:9000"),
+			envOr("DARK_ARTS_S3_ACCESS_KEY", "darkarts"),
+			envOr("DARK_ARTS_S3_SECRET_KEY", "darkarts-lab"),
+			envOr("DARK_ARTS_S3_BUCKET", "darkarts"),
+			os.Getenv("DARK_ARTS_S3_SECURE") == "true",
 		)
 		if err != nil {
 			return nil, err
@@ -65,7 +65,7 @@ func newStore(log *slog.Logger) (store.Store, error) {
 		log.Info("edge using minio store", "bucket", m.Bucket())
 		return m, nil
 	default:
-		dir := envOr("DARKARTS_STORE_DIR", "./data/edge")
+		dir := envOr("DARK_ARTS_STORE_DIR", "./data/edge")
 		log.Info("edge using file store", "dir", dir)
 		return store.NewFile(dir), nil
 	}

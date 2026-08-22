@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"darkarts/pkg/reflective"
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/reflective"
+	"dark-arts/pkg/tasking"
 )
 
 func (e *Executor) runDll(payload []byte, res *tasking.Result) {

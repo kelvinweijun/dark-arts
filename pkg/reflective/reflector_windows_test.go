@@ -5,7 +5,7 @@ package reflective
 import (
 	"testing"
 
-	"darkarts/pkg/sleepmask"
+	"dark-arts/pkg/sleepmask"
 )
 
 func TestLoadNoImportsReloc(t *testing.T) {

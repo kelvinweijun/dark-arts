@@ -10,12 +10,12 @@ import (
 	"os"
 	"strings"
 
-	"darkarts/internal/version"
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/deaddrop"
-	"darkarts/pkg/logging"
-	"darkarts/pkg/stager"
-	"darkarts/pkg/store"
+	"dark-arts/internal/version"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/deaddrop"
+	"dark-arts/pkg/logging"
+	"dark-arts/pkg/stager"
+	"dark-arts/pkg/store"
 )
 
 func main() {
@@ -115,7 +115,7 @@ func runFetch(args []string) int {
 	ddDir := fs.String("dd-dir", "", "file dead-drop dir")
 	storeDir := fs.String("store-dir", "", "file store dir")
 	ref := fs.String("ref", "", "manifest dead-drop ref")
-	operatorPub := fs.String("operator-pub", os.Getenv("DARKARTS_OPERATOR_PUB"), "operator ed25519 public key (hex)")
+	operatorPub := fs.String("operator-pub", os.Getenv("DARK_ARTS_OPERATOR_PUB"), "operator ed25519 public key (hex)")
 	loaderMode := fs.String("loader", "memory", "memory | child")
 	maxSize := fs.Int64("max-size", 0, "max stage blob size in bytes")
 	logLevel := fs.String("log", "", "debug|info|warn|error")

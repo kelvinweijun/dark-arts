@@ -13,7 +13,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"darkarts/pkg/evasion"
+	"dark-arts/pkg/evasion"
 )
 
 const (

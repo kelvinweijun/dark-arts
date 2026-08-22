@@ -19,10 +19,10 @@ import (
 	"strings"
 	"time"
 
-	"darkarts/pkg/crypto"
-	"darkarts/pkg/mimic"
-	"darkarts/pkg/sleepmask"
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/crypto"
+	"dark-arts/pkg/mimic"
+	"dark-arts/pkg/sleepmask"
+	"dark-arts/pkg/tasking"
 )
 
 type Runner interface {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"darkarts/pkg/crypto"
+	"dark-arts/pkg/crypto"
 )
 
 func main() {

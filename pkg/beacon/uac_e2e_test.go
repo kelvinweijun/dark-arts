@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"darkarts/pkg/tasking"
+	"dark-arts/pkg/tasking"
 )
 
 // TestUacTaskEndToEnd exercises the full one-time-prompt trade: build a real
@@ -25,7 +25,7 @@ func TestUacTaskEndToEnd(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	beaconExe := filepath.Join(dir, "beacon-test.exe")
-	if out, err := exec.Command("go", "build", "-o", beaconExe, "darkarts/cmd/beacon").CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-o", beaconExe, "dark-arts/cmd/beacon").CombinedOutput(); err != nil {
 		t.Fatalf("build beacon: %v: %s", err, out)
 	}
 
