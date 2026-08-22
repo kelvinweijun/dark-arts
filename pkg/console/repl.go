@@ -296,7 +296,7 @@ func ensureSSHKey(ctx context.Context) (pub string, pubPath string, generated bo
 	if err := os.MkdirAll(filepath.Dir(ed25519), 0o700); err != nil {
 		return "", "", false, err
 	}
-	cmd := exec.CommandContext(ctx, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "darkarts-lab", "-f", ed25519)
+	cmd := exec.CommandContext(ctx, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "dark-arts-lab", "-f", ed25519)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", "", false, fmt.Errorf("ssh-keygen failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
