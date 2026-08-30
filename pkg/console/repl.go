@@ -235,11 +235,11 @@ func (r *REPL) help() {
   sshkey                   show (or generate) the ssh keypair used to reach the VPS
   tunnel <user@vps>        start the reverse tunnel window now and verify it from the VPS
   tunnel-install <user@vps> install a scheduled task so the tunnel auto-starts at logon
-  redirector [-Reverse] [-Inject|-NoInject] <user@vps> [domain]   provision a VPS redirector (ssh + nginx TLS
+  redirector [-Reverse] <user@vps> [domain]   provision a VPS redirector (ssh + nginx TLS
                         :443 -> lab relay :7443), verify, then build+register the package
                         (-Reverse: lab host is NAT'd; VPS forwards into an outbound SSH
                         tunnel to the lab relay - no inbound ports, works on CG-NAT)
-  package [-Seed h] [-Edge u] [-Inject] [-NoInject]   build beacon.exe + register the session (defaults: fresh identity, auto LAN edge, inject enabled)
+  package [-Seed h] [-Edge u]   build beacon.exe + register the session (defaults: fresh identity, auto LAN edge)
   touch <id> <pub_hex>     register a session (id + agent public key)
   ttps                     list available task types
   task <sid> <type> [k=v]  issue a task (params as key=value pairs)
@@ -356,26 +356,12 @@ func startTunnelWindow(ctx context.Context, target string) error {
 
 func (r *REPL) setupRedirector(ctx context.Context, args []string) error {
 	reverse := false
-	inject := true // default enabled
 	if len(args) > 0 && (args[0] == "-Reverse" || args[0] == "-reverse" || args[0] == "-r") {
 		reverse = true
 		args = args[1:]
 	}
-	// parse -Inject / -NoInject flags
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "-Inject", "-inject":
-			inject = true
-			args = append(args[:i], args[i+1:]...)
-			i--
-		case "-NoInject", "-noinject":
-			inject = false
-			args = append(args[:i], args[i+1:]...)
-			i--
-		}
-	}
 	if len(args) < 1 {
-		return fmt.Errorf("usage: redirector [-Reverse] [-Inject|-NoInject] <user@vps-ip> [domain]")
+		return fmt.Errorf("usage: redirector [-Reverse] <user@vps-ip> [domain]")
 	}
 	target := args[0]
 	domain := ""
@@ -475,11 +461,7 @@ func (r *REPL) setupRedirector(ctx context.Context, args []string) error {
 	}
 	edge := fmt.Sprintf("https://%s:443,http://%s:7443", edgeHost, edgeIP)
 	fmt.Fprintf(r.out, "== building beacon with edges: %s ==\n", edge)
-	pkgArgs := []string{"-Edge", edge, "-Insecure"}
-	if !inject {
-		pkgArgs = append(pkgArgs, "-NoInject")
-	}
-	return r.buildPackage(ctx, pkgArgs)
+	return r.buildPackage(ctx, []string{"-Edge", edge, "-Insecure"})
 }
 
 func detectLabIP() (string, error) {
@@ -529,23 +511,21 @@ func (r *REPL) buildPackage(ctx context.Context, args []string) error {
 		case "-Seed", "-seed":
 			i++
 			if i >= len(args) {
-				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject] [-Inject]")
+				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject]")
 			}
 			cmdArgs = append(cmdArgs, "-Seed", args[i])
 		case "-Edge", "-edge":
 			i++
 			if i >= len(args) {
-				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject] [-Inject]")
+				return fmt.Errorf("usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject]")
 			}
 			cmdArgs = append(cmdArgs, "-Edge", args[i])
 		case "-NoInject":
 			cmdArgs = append(cmdArgs, "-NoInject")
-		case "-Inject", "-inject":
-			// Inject is enabled by default; this flag is a no-op for explicitness
 		case "-Insecure", "-insecure":
 			cmdArgs = append(cmdArgs, "-Insecure")
 		default:
-			return fmt.Errorf("unknown package flag %q (usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject] [-Inject])", args[i])
+			return fmt.Errorf("unknown package flag %q (usage: package [-Seed <64-hex>] [-Edge <urls>] [-Insecure] [-NoInject])", args[i])
 		}
 	}
 	cmd := exec.CommandContext(ctx, "powershell", cmdArgs...)
