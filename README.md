@@ -1,5 +1,7 @@
 # Dark Arts
 
+![Banner](banner.png)
+
 An asynchronous, mesh-capable command-and-control (C2) framework for laboratory research and authorized security testing.
 
 Dark Arts is built around a simple asymmetry: **implants never wait, operators never connect to targets**. Beacons check in on their own schedule; tasking and results are exchanged as encrypted blobs through a chain of stateless relays and rendezvous points. The operator console talks only to a control server, which never touches the target network.
