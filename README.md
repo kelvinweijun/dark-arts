@@ -171,7 +171,7 @@ Commands:
 | `session <id>` | session detail |
 | `touch <id> <pub_hex>` | register a session (id + agent public key) |
 | `ttps` | list available task types |
-| `task <sid> <type> [k=v …]` | issue a task (e.g. `task <sid> shell cmd=echo hello`) |
+| `task <sid> <type> [k=v …]` | issue a task (e.g. `task <sid> shell cmd=echo hello`, `task <sid> bof data=<b64> fn=go`) |
 | `tasks` | list task queue |
 | `results [sid]` | list results |
 | `kill <sid>` | send a kill directive (beacon exits cleanly) |
@@ -297,6 +297,45 @@ dark-arts> sleep <sid> 60
 dark-arts> task <sid> persist method=reg name=sysaux
 dark-arts> kill <sid>
 ```
+
+#### BOF tasks (Beacon Object Files)
+
+BOFs execute native COFF objects in-memory inside the beacon process — no child process, no disk write. Compile a C file with MSVC (`cl /c /nologo /O2 /GS-`), then issue the task:
+
+```
+dark-arts> task <sid> bof data=<base64-encoded-COFF> fn=go
+```
+
+The `data` field is a base64-encoded `.obj` file. The `fn` field is the entry-point function name (default: `go`). The function must follow the BOF convention: `void go(char *args, int length)`.
+
+The BOF can call `BeaconPrintf` and `BeaconOutput` to send output back to the operator. Results appear in `results <sid>` like any other task.
+
+**Example: compile and run a test BOF**
+
+```powershell
+# On the lab host (MSVC required)
+cl /c /nologo /O2 /GS- bof_test\bof_test.c /Fo:bof_test\bof_test.obj
+
+# Base64-encode the artifact
+$coff = [Convert]::ToBase64String([IO.File]::ReadAllBytes("bof_test\bof_test.obj"))
+```
+
+Then in the console:
+
+```
+dark-arts> task <sid> bof data=<paste-base64-here> fn=go
+dark-arts> results <sid>                  # output: HiTest 42
+```
+
+**BOF payload schema:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `data` | yes | Base64-encoded COFF `.obj` file |
+| `fn` | no | Entry-point function name (default: `go`) |
+| `args` | no | Space-separated arguments passed to the BOF |
+
+**Limitations:** Windows AMD64 only. The BOF executes in-process — a misbehaving BOF can crash the beacon. The `bof_test.obj` artifact (compiled from `bof_test/bof_test.c`) exercises all Beacon APIs and is available for testing.
 
 ### 9. Teardown
 
@@ -426,6 +465,83 @@ The inject path runs entirely on **direct syscalls** (`pkg/evasion` + `pkg/injec
 **Indirect-syscall attempt (reverted):** a true indirect path (SSN + argument shuffle + `jmp` to a `syscall; ret` site inside the loaded ntdll's `.text`) was implemented and A/B-tested. It was deterministic-correct only when `invokeSyscall` is called from the shallowest Go frame; through any nested Go function the executed syscall number came back wrong (5/5 failures at call depth ≥ 2 while the identical direct call at any depth returns correct statuses). The code was reverted to the proven direct path; this finding is attributed to the lab environment's syscall monitoring (non-stock ntdll: `SCPCFG`/`fothk` sections, dual `0F 05 C3 CD 2E C3` stub tails) and is documented for future work.
 
 Defender caveat: compile-temp artifacts (`go test` binaries, one early build) have been flagged by ML engines (`Trojan:Win32/Bearfoos.A!ml`, `Behavior:Win32/DefenseEvasion.A!ml`) and remediated. The stripped, final beacon builds (stealth recipe: `-s -w` + `-trimpath` + `-buildvcs=false` + per-build `-buildid`) have consistently passed — the direct-syscall path avoids hooked-API call patterns entirely. The inject path is behaviorally loud by design and belongs in authorized labs only.
+
+### BOF execution (`pkg/bof`)
+
+Beacon Object Files (BOFs) are compiled COFF `.obj` files executed in-memory inside the beacon process. They can call Beacon API functions (`BeaconPrintf`, `BeaconOutput`, `BeaconDataParse`, etc.) to exchange data with the beacon — the same mechanism used by Cobalt Strike and other C2 frameworks.
+
+**How it works:**
+
+1. The operator issues a `bof` task with a base64-encoded COFF object.
+2. The beacon decodes the COFF, resolves external symbols (Beacon API functions) to their in-process trampolines.
+3. The COFF sections are loaded into executable memory (RWX via `NtProtectVirtualMemory`).
+4. The entry-point function is called with the packed arguments buffer.
+5. Any `BeaconPrintf`/`BeaconOutput` calls are captured and returned as task output.
+
+**Compiling BOFs:**
+
+BOFs must be compiled as position-independent COFF objects with MSVC:
+
+```powershell
+cl /c /nologo /O2 /GS- mybof.c /Fo:mybof.obj
+```
+
+The `/GS-` flag disables stack cookie checks (required for in-process execution). The entry-point function must follow the convention:
+
+```c
+void go(char *args, int length) {
+    // args is a packed buffer; use BeaconDataParse to read it
+    // use BeaconPrintf/BeaconOutput to send output back
+}
+```
+
+**Issuing BOF tasks:**
+
+```
+dark-arts> task <sid> bof data=<base64-COFF> fn=go args="arg1 arg2"
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `data` | yes | Base64-encoded COFF `.obj` file |
+| `fn` | no | Entry-point function name (default: `go`) |
+| `args` | no | Space-separated arguments (packed into the buffer) |
+
+**Beacon API functions available to BOFs:**
+
+| Function | Purpose |
+|----------|---------|
+| `BeaconPrintf(int type, char *fmt, ...)` | Formatted output (type 0 = `OUTPUT_CASE` for results) |
+| `BeaconOutput(int type, char *data, int len)` | Raw output |
+| `BeaconDataParse(DataParser *parser, char *buffer, int length)` | Initialize argument parser |
+| `BeaconDataInt(DataParser *parser)` | Read int32 from args |
+| `BeaconDataShort(DataParser *parser)` | Read int16 from args |
+| `BeaconDataLength(DataParser *parser)` | Remaining bytes in parser |
+| `BeaconDataExtract(DataParser *parser, int size)` | Extract raw bytes from args |
+
+**Example BOF (`bof_test/bof_test.c`):**
+
+```c
+#include "beacon.h"
+
+void go(char *args, int length) {
+    BeaconPrintf(0, "Test %d", 42);
+    BeaconOutput(0, "Hi", 2);
+}
+```
+
+Compile: `cl /c /nologo /O2 /GS- bof_test.c /Fo:bof_test.obj`
+
+Issue: `task <sid> bof data=<base64-of-bof_test.obj> fn=go`
+
+Result: `Test 42` and `Hi` appear in the output.
+
+**Limitations:**
+
+- Windows AMD64 only (COFF format is x64-specific).
+- Executes in-process — a crashing BOF crashes the beacon.
+- No dynamic linking — all symbols must be resolved at load time.
+- The BOF artifact (`bof_test/bof_test.obj`) is precompiled and checked into the repository for testing.
 
 ### Sleep mask (`pkg/sleepmask`)
 

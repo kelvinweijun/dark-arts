@@ -6,7 +6,7 @@ import (
 )
 
 func TestRegistryLookupAndList(t *testing.T) {
-	for _, name := range []string{"shell", "exec", "sleep", "download", "upload", "kill", "inject", "dll", "persist", "unpersist"} {
+	for _, name := range []string{"shell", "exec", "sleep", "download", "upload", "kill", "inject", "dll", "persist", "unpersist", "uac", "bof"} {
 		if _, ok := Lookup(name); !ok {
 			t.Fatalf("expected ttp %q registered", name)
 		}
@@ -14,8 +14,8 @@ func TestRegistryLookupAndList(t *testing.T) {
 	if _, ok := Lookup("nonexistent"); ok {
 		t.Fatal("nonexistent ttp must not resolve")
 	}
-	if len(List()) < 10 {
-		t.Fatalf("expected at least 10 ttps, got %d", len(List()))
+	if len(List()) < 12 {
+		t.Fatalf("expected at least 12 ttps, got %d", len(List()))
 	}
 }
 
@@ -132,5 +132,75 @@ func TestUacValidation(t *testing.T) {
 func TestUnknownGenerate(t *testing.T) {
 	if _, err := Generate("nope", nil); err == nil {
 		t.Fatal("unknown ttp must fail")
+	}
+}
+
+func TestBOFRegistryLookup(t *testing.T) {
+	s, ok := Lookup("bof")
+	if !ok {
+		t.Fatal("bof ttp must be registered")
+	}
+	if s.Name != "bof" {
+		t.Fatalf("expected name bof, got %s", s.Name)
+	}
+}
+
+func TestBOFGenerateRequiresData(t *testing.T) {
+	if _, err := Generate("bof", map[string]string{}); err == nil {
+		t.Fatal("bof without data must fail")
+	}
+	if _, err := Generate("bof", map[string]string{"data": ""}); err == nil {
+		t.Fatal("bof with empty data must fail")
+	}
+}
+
+func TestBOFGenerateInvalidBase64(t *testing.T) {
+	if _, err := Generate("bof", map[string]string{"data": "not-base64!"}); err == nil {
+		t.Fatal("bof with invalid base64 must fail")
+	}
+}
+
+func TestBOFGenerateValid(t *testing.T) {
+	b, err := Generate("bof", map[string]string{"data": "AA=="})
+	if err != nil {
+		t.Fatalf("bof generate: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["data"] != "AA==" {
+		t.Fatalf("bof data mismatch: %v", out)
+	}
+	if out["fn"] != "go" {
+		t.Fatalf("expected fn=go, got %v", out["fn"])
+	}
+}
+
+func TestBOFGenerateWithFn(t *testing.T) {
+	b, err := Generate("bof", map[string]string{"data": "AA==", "fn": "main"})
+	if err != nil {
+		t.Fatalf("bof generate: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["fn"] != "main" {
+		t.Fatalf("expected fn=main, got %v", out["fn"])
+	}
+}
+
+func TestBOFGenerateWithArgs(t *testing.T) {
+	b, err := Generate("bof", map[string]string{"data": "AA==", "args": "hello world"})
+	if err != nil {
+		t.Fatalf("bof generate: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out["args"] != "hello world" {
+		t.Fatalf("expected args='hello world', got %v", out["args"])
 	}
 }

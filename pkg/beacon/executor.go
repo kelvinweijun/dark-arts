@@ -62,6 +62,8 @@ func (e *Executor) Run(ctx context.Context, t *tasking.Task) *tasking.Result {
 		e.runUnpersist(t.Payload, res)
 	case "uac":
 		e.runUac(t.Payload, res)
+	case "bof":
+		e.runBOF(t.Payload, res)
 	default:
 		res.Error = "beacon: unknown task type " + t.Type
 	}

@@ -1,0 +1,11 @@
+﻿Microsoft (R) COFF/PE Dumper Version 14.44.35228.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file C:\Users\kelvi\Downloads\Dark Arts\bof_test\bridge_abi0_test.exe
+
+File Type: LIBRARY
+C:\Users\kelvi\Downloads\Dark Arts\bof_test\bridge_abi0_test.exe : warning LNK4003: invalid library format; library ignored
+
+  Summary
+

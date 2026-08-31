@@ -264,6 +264,47 @@ func AllocateVirtualMemory(process, size uintptr, protect uint32) (uintptr, erro
 	return base, nil
 }
 
+// AllocateVirtualMemoryNear tries to allocate memory within 2GB of a reference address.
+// This is required for REL32 relocations in COFF/BOF files where external symbol calls
+// use 32-bit relative displacements. Retries with aligned hints within the ±2GB range.
+func AllocateVirtualMemoryNear(process, size uintptr, protect uint32, nearAddr uintptr) (uintptr, error) {
+	if err := initSys(); err != nil {
+		return 0, err
+	}
+
+	const (
+		allocGranularity = 64 * 1024 // 64KB Windows allocation granularity
+		maxRange         = 0x7FF00000 // ~2GB minus some headroom
+	)
+
+	// Try allocating at hint addresses within ±2GB of nearAddr, stepping by allocation granularity
+	// Try downward first (more likely to succeed in typical address layouts)
+	for offset := uintptr(allocGranularity); offset < maxRange; offset += allocGranularity {
+		hint := nearAddr - offset
+		if hint == 0 {
+			continue
+		}
+		var base = hint
+		regionSize := size
+		if st := call(sysTbl.allocVM, process, uintptr(unsafe.Pointer(&base)), 0, uintptr(unsafe.Pointer(&regionSize)), memCommitReserve, uintptr(protect)); int32(uint32(st)) >= 0 {
+			return base, nil
+		}
+	}
+
+	// Try upward
+	for offset := uintptr(allocGranularity); offset < maxRange; offset += allocGranularity {
+		hint := nearAddr + offset
+		var base = hint
+		regionSize := size
+		if st := call(sysTbl.allocVM, process, uintptr(unsafe.Pointer(&base)), 0, uintptr(unsafe.Pointer(&regionSize)), memCommitReserve, uintptr(protect)); int32(uint32(st)) >= 0 {
+			return base, nil
+		}
+	}
+
+	// Fall back to OS-chosen address
+	return AllocateVirtualMemory(process, size, protect)
+}
+
 // FreeVirtualMemory releases memory in the target process.
 func FreeVirtualMemory(process, base uintptr) error {
 	if err := initSys(); err != nil {

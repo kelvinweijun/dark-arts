@@ -1,0 +1,237 @@
+﻿Microsoft (R) COFF/PE Dumper Version 14.44.35228.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file C:\Users\kelvi\Downloads\Dark Arts\bof_test\nonvolatile_regs.obj
+
+File Type: COFF OBJECT
+
+go:
+  0000000000000000: 40 53              push        rbx
+  0000000000000002: 48 83 EC 60        sub         rsp,60h
+  0000000000000006: 33 C0              xor         eax,eax
+  0000000000000008: C7 44 24 38 50 00  mov         dword ptr [rsp+38h],50h
+                    00 00
+  0000000000000010: 89 05 00 00 00 00  mov         dword ptr [g_nv_pass],eax
+  0000000000000016: BA 14 00 00 00     mov         edx,14h
+  000000000000001B: C7 44 24 30 46 00  mov         dword ptr [rsp+30h],46h
+                    00 00
+  0000000000000023: 41 B9 28 00 00 00  mov         r9d,28h
+  0000000000000029: 89 05 00 00 00 00  mov         dword ptr [g_nv_count],eax
+  000000000000002F: 41 B8 1E 00 00 00  mov         r8d,1Eh
+  0000000000000035: C7 44 24 28 3C 00  mov         dword ptr [rsp+28h],3Ch
+                    00 00
+  000000000000003D: B9 0A 00 00 00     mov         ecx,0Ah
+  0000000000000042: 89 05 00 00 00 00  mov         dword ptr [g_nv_r14_clobbered],eax
+  0000000000000048: C7 44 24 20 32 00  mov         dword ptr [rsp+20h],32h
+                    00 00
+  0000000000000050: E8 00 00 00 00     call        nv_compute_8
+  0000000000000055: 8B 0D 00 00 00 00  mov         ecx,dword ptr [g_nv_count]
+  000000000000005B: FF C1              inc         ecx
+  000000000000005D: 89 0D 00 00 00 00  mov         dword ptr [g_nv_count],ecx
+  0000000000000063: 85 C0              test        eax,eax
+  0000000000000065: 74 0F              je          0000000000000076
+  0000000000000067: 8B 05 00 00 00 00  mov         eax,dword ptr [g_nv_pass]
+  000000000000006D: 83 C8 01           or          eax,1
+  0000000000000070: 89 05 00 00 00 00  mov         dword ptr [g_nv_pass],eax
+  0000000000000076: BA 03 00 00 00     mov         edx,3
+  000000000000007B: B9 02 00 00 00     mov         ecx,2
+  0000000000000080: E8 00 00 00 00     call        nv_compute_chain
+  0000000000000085: BA 05 00 00 00     mov         edx,5
+  000000000000008A: B9 04 00 00 00     mov         ecx,4
+  000000000000008F: 8B D8              mov         ebx,eax
+  0000000000000091: E8 00 00 00 00     call        nv_compute_chain
+  0000000000000096: 8D 0C 18           lea         ecx,[rax+rbx]
+  0000000000000099: 8B 05 00 00 00 00  mov         eax,dword ptr [g_nv_count]
+  000000000000009F: FF C0              inc         eax
+  00000000000000A1: 89 05 00 00 00 00  mov         dword ptr [g_nv_count],eax
+  00000000000000A7: 83 F9 1A           cmp         ecx,1Ah
+  00000000000000AA: 75 0F              jne         00000000000000BB
+  00000000000000AC: 8B 05 00 00 00 00  mov         eax,dword ptr [g_nv_pass]
+  00000000000000B2: 83 C8 02           or          eax,2
+  00000000000000B5: 89 05 00 00 00 00  mov         dword ptr [g_nv_pass],eax
+  00000000000000BB: C7 44 24 58 0C 00  mov         dword ptr [rsp+58h],0Ch
+                    00 00
+  00000000000000C3: BA 02 00 00 00     mov         edx,2
+  00000000000000C8: C7 44 24 50 0B 00  mov         dword ptr [rsp+50h],0Bh
+                    00 00
+  00000000000000D0: 41 B9 04 00 00 00  mov         r9d,4
+  00000000000000D6: C7 44 24 48 0A 00  mov         dword ptr [rsp+48h],0Ah
+                    00 00
+  00000000000000DE: 41 B8 03 00 00 00  mov         r8d,3
+  00000000000000E4: C7 44 24 40 09 00  mov         dword ptr [rsp+40h],9
+                    00 00
+  00000000000000EC: B9 01 00 00 00     mov         ecx,1
+  00000000000000F1: C7 44 24 38 08 00  mov         dword ptr [rsp+38h],8
+                    00 00
+  00000000000000F9: C7 44 24 30 07 00  mov         dword ptr [rsp+30h],7
+                    00 00
+  0000000000000101: C7 44 24 28 06 00  mov         dword ptr [rsp+28h],6
+                    00 00
+  0000000000000109: C7 44 24 20 05 00  mov         dword ptr [rsp+20h],5
+                    00 00
+  0000000000000111: E8 00 00 00 00     call        nv_extreme_pressure
+  0000000000000116: 8B 0D 00 00 00 00  mov         ecx,dword ptr [g_nv_count]
+  000000000000011C: FF C1              inc         ecx
+  000000000000011E: 89 0D 00 00 00 00  mov         dword ptr [g_nv_count],ecx
+  0000000000000124: 85 C0              test        eax,eax
+  0000000000000126: 74 0F              je          0000000000000137
+  0000000000000128: 8B 05 00 00 00 00  mov         eax,dword ptr [g_nv_pass]
+  000000000000012E: 83 C8 04           or          eax,4
+  0000000000000131: 89 05 00 00 00 00  mov         dword ptr [g_nv_pass],eax
+  0000000000000137: 48 83 C4 60        add         rsp,60h
+  000000000000013B: 5B                 pop         rbx
+  000000000000013C: C3                 ret
+
+nv_compute_8:
+  0000000000000000: 48 8B C4           mov         rax,rsp
+  0000000000000003: 48 89 58 08        mov         qword ptr [rax+8],rbx
+  0000000000000007: 48 89 70 10        mov         qword ptr [rax+10h],rsi
+  000000000000000B: 57                 push        rdi
+  000000000000000C: 48 83 EC 50        sub         rsp,50h
+  0000000000000010: 44 8B 9C 24 90 00  mov         r11d,dword ptr [rsp+90h]
+                    00 00
+  0000000000000018: 8D 34 11           lea         esi,[rcx+rdx]
+  000000000000001B: 44 03 9C 24 98 00  add         r11d,dword ptr [rsp+98h]
+                    00 00
+  0000000000000023: 45 03 C8           add         r9d,r8d
+  0000000000000026: 8B BC 24 80 00 00  mov         edi,dword ptr [rsp+80h]
+                    00
+  000000000000002D: 41 8B D3           mov         edx,r11d
+  0000000000000030: 03 BC 24 88 00 00  add         edi,dword ptr [rsp+88h]
+                    00
+  0000000000000037: 45 8B D1           mov         r10d,r9d
+  000000000000003A: 0F AF D7           imul        edx,edi
+  000000000000003D: 44 8B C6           mov         r8d,esi
+  0000000000000040: 44 0F AF D6        imul        r10d,esi
+  0000000000000044: 42 8D 0C 12        lea         ecx,[rdx+r10]
+  0000000000000048: 8B D9              mov         ebx,ecx
+  000000000000004A: 33 DA              xor         ebx,edx
+  000000000000004C: 41 33 DA           xor         ebx,r10d
+  000000000000004F: 41 33 DB           xor         ebx,r11d
+  0000000000000052: 33 DF              xor         ebx,edi
+  0000000000000054: 41 33 D9           xor         ebx,r9d
+  0000000000000057: 33 DE              xor         ebx,esi
+  0000000000000059: 89 58 F0           mov         dword ptr [rax-10h],ebx
+  000000000000005C: 89 48 E8           mov         dword ptr [rax-18h],ecx
+  000000000000005F: 33 C9              xor         ecx,ecx
+  0000000000000061: 89 50 E0           mov         dword ptr [rax-20h],edx
+  0000000000000064: 48 8D 15 00 00 00  lea         rdx,[??_C@_0BM@CKADGNHI@nv?3?5?$CFd?5?$CFd?5?$CFd?5?$CFd?5?$CFd?5?$CFd?5?$CFd?5?$CFd@]
+                    00
+  000000000000006B: 44 89 50 D8        mov         dword ptr [rax-28h],r10d
+  000000000000006F: 44 89 58 D0        mov         dword ptr [rax-30h],r11d
+  0000000000000073: 89 78 C8           mov         dword ptr [rax-38h],edi
+  0000000000000076: E8 00 00 00 00     call        BeaconPrintf
+  000000000000007B: 48 8B 74 24 68     mov         rsi,qword ptr [rsp+68h]
+  0000000000000080: 8B C3              mov         eax,ebx
+  0000000000000082: 48 8B 5C 24 60     mov         rbx,qword ptr [rsp+60h]
+  0000000000000087: 48 83 C4 50        add         rsp,50h
+  000000000000008B: 5F                 pop         rdi
+  000000000000008C: C3                 ret
+
+nv_compute_chain:
+  0000000000000000: 40 53              push        rbx
+  0000000000000002: 48 83 EC 30        sub         rsp,30h
+  0000000000000006: 8B D9              mov         ebx,ecx
+  0000000000000008: 44 8B CA           mov         r9d,edx
+  000000000000000B: 0F AF DA           imul        ebx,edx
+  000000000000000E: 44 8B C1           mov         r8d,ecx
+  0000000000000011: 48 8D 15 00 00 00  lea         rdx,[??_C@_0BA@KDLKFFKP@chain?3?5?$CFd?$CK?$CFd?$DN?$CFd@]
+                    00
+  0000000000000018: 33 C9              xor         ecx,ecx
+  000000000000001A: 89 5C 24 20        mov         dword ptr [rsp+20h],ebx
+  000000000000001E: E8 00 00 00 00     call        BeaconPrintf
+  0000000000000023: 8B C3              mov         eax,ebx
+  0000000000000025: 48 83 C4 30        add         rsp,30h
+  0000000000000029: 5B                 pop         rbx
+  000000000000002A: C3                 ret
+
+nv_extreme_pressure:
+  0000000000000000: 48 89 5C 24 10     mov         qword ptr [rsp+10h],rbx
+  0000000000000005: 48 89 6C 24 18     mov         qword ptr [rsp+18h],rbp
+  000000000000000A: 48 89 74 24 20     mov         qword ptr [rsp+20h],rsi
+  000000000000000F: 57                 push        rdi
+  0000000000000010: 41 54              push        r12
+  0000000000000012: 41 55              push        r13
+  0000000000000014: 41 56              push        r14
+  0000000000000016: 41 57              push        r15
+  0000000000000018: 48 83 EC 30        sub         rsp,30h
+  000000000000001C: 44 8B A4 24 90 00  mov         r12d,dword ptr [rsp+90h]
+                    00 00
+  0000000000000024: 03 D1              add         edx,ecx
+  0000000000000026: 8B 9C 24 B0 00 00  mov         ebx,dword ptr [rsp+0B0h]
+                    00
+  000000000000002D: 45 8B E8           mov         r13d,r8d
+  0000000000000030: 44 0F AF A4 24 98  imul        r12d,dword ptr [rsp+98h]
+                    00 00 00
+  0000000000000039: 44 8B C2           mov         r8d,edx
+  000000000000003C: 0F AF 9C 24 B8 00  imul        ebx,dword ptr [rsp+0B8h]
+                    00 00
+  0000000000000044: 33 C9              xor         ecx,ecx
+  0000000000000046: 44 8B BC 24 80 00  mov         r15d,dword ptr [rsp+80h]
+                    00 00
+  000000000000004E: 8B B4 24 A0 00 00  mov         esi,dword ptr [rsp+0A0h]
+                    00
+  0000000000000055: 44 03 BC 24 88 00  add         r15d,dword ptr [rsp+88h]
+                    00 00
+  000000000000005D: 03 B4 24 A8 00 00  add         esi,dword ptr [rsp+0A8h]
+                    00
+  0000000000000064: 45 0F AF E9        imul        r13d,r9d
+  0000000000000068: 89 54 24 60        mov         dword ptr [rsp+60h],edx
+  000000000000006C: 42 8D 3C 23        lea         edi,[rbx+r12]
+  0000000000000070: 46 8D 34 3E        lea         r14d,[rsi+r15]
+  0000000000000074: 44 03 F2           add         r14d,edx
+  0000000000000077: 41 03 FD           add         edi,r13d
+  000000000000007A: 45 8B CD           mov         r9d,r13d
+  000000000000007D: 44 89 74 24 20     mov         dword ptr [rsp+20h],r14d
+  0000000000000082: 48 8D 15 00 00 00  lea         rdx,[??_C@_0N@LHOHDPHF@p1?3?5?$CFd?5?$CFd?5?$CFd@]
+                    00
+  0000000000000089: 42 8D 2C 37        lea         ebp,[rdi+r14]
+  000000000000008D: E8 00 00 00 00     call        BeaconPrintf
+  0000000000000092: 45 8B CC           mov         r9d,r12d
+  0000000000000095: 89 7C 24 20        mov         dword ptr [rsp+20h],edi
+  0000000000000099: 45 8B C7           mov         r8d,r15d
+  000000000000009C: 48 8D 15 00 00 00  lea         rdx,[??_C@_0N@MAHJONIF@p2?3?5?$CFd?5?$CFd?5?$CFd@]
+                    00
+  00000000000000A3: 33 C9              xor         ecx,ecx
+  00000000000000A5: E8 00 00 00 00     call        BeaconPrintf
+  00000000000000AA: 44 8B CB           mov         r9d,ebx
+  00000000000000AD: 89 6C 24 20        mov         dword ptr [rsp+20h],ebp
+  00000000000000B1: 44 8B C6           mov         r8d,esi
+  00000000000000B4: 48 8D 15 00 00 00  lea         rdx,[??_C@_0N@FLNMKBOK@p3?3?5?$CFd?5?$CFd?5?$CFd@]
+                    00
+  00000000000000BB: 33 C9              xor         ecx,ecx
+  00000000000000BD: E8 00 00 00 00     call        BeaconPrintf
+  00000000000000C2: 8B 54 24 60        mov         edx,dword ptr [rsp+60h]
+  00000000000000C6: 8D 0C 33           lea         ecx,[rbx+rsi]
+  00000000000000C9: 48 8B 5C 24 68     mov         rbx,qword ptr [rsp+68h]
+  00000000000000CE: 41 03 CF           add         ecx,r15d
+  00000000000000D1: 48 8B 74 24 78     mov         rsi,qword ptr [rsp+78h]
+  00000000000000D6: 41 03 CD           add         ecx,r13d
+  00000000000000D9: 8D 42 01           lea         eax,[rdx+1]
+  00000000000000DC: 41 0F AF C4        imul        eax,r12d
+  00000000000000E0: 03 C7              add         eax,edi
+  00000000000000E2: 8D 04 48           lea         eax,[rax+rcx*2]
+  00000000000000E5: 41 03 C6           add         eax,r14d
+  00000000000000E8: 03 C5              add         eax,ebp
+  00000000000000EA: 48 8B 6C 24 70     mov         rbp,qword ptr [rsp+70h]
+  00000000000000EF: 03 C2              add         eax,edx
+  00000000000000F1: 48 83 C4 30        add         rsp,30h
+  00000000000000F5: 41 5F              pop         r15
+  00000000000000F7: 41 5E              pop         r14
+  00000000000000F9: 41 5D              pop         r13
+  00000000000000FB: 41 5C              pop         r12
+  00000000000000FD: 5F                 pop         rdi
+  00000000000000FE: C3                 ret
+
+  Summary
+
+           C .bss
+          B0 .chks64
+          94 .debug$S
+          2F .drectve
+          30 .pdata
+          53 .rdata
+         2F4 .text$mn
+          1E .voltbl
+          3C .xdata

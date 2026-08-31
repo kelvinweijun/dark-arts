@@ -239,4 +239,32 @@ func init() {
 			return obj(map[string]any{"method": p["method"], "name": p["name"], "cmd": p["cmd"]}), nil
 		},
 	})
+
+	Register(&Spec{
+		Name:        "bof",
+		Description: "Execute a native COFF BOF object in-memory (Windows AMD64 only)",
+		Args: []Arg{
+			{Name: "data", Required: true, Description: "base64-encoded COFF object (.obj)"},
+			{Name: "fn", Description: "entry-point function name (default: go)"},
+			{Name: "args", Description: "space-separated arguments passed to the BOF"},
+		},
+		Generate: func(p map[string]string) ([]byte, error) {
+			if p["data"] == "" {
+				return nil, fmt.Errorf("ttp: bof requires base64 data")
+			}
+			raw, err := base64.StdEncoding.DecodeString(p["data"])
+			if err != nil {
+				return nil, fmt.Errorf("ttp: bof data is not valid base64: %v", err)
+			}
+			fn := p["fn"]
+			if fn == "" {
+				fn = "go"
+			}
+			return obj(map[string]any{
+				"data": base64.StdEncoding.EncodeToString(raw),
+				"fn":   fn,
+				"args": p["args"],
+			}), nil
+		},
+	})
 }
