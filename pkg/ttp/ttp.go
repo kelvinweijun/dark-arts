@@ -267,4 +267,36 @@ func init() {
 			}), nil
 		},
 	})
+
+	Register(&Spec{
+		Name:        "amsi",
+		Description: "Query or change AMSI security-control state (Phase 5B: scaffolding only)",
+		Args: []Arg{
+			{Name: "action", Required: true, Description: "activate | deactivate | status"},
+		},
+		Generate: func(p map[string]string) ([]byte, error) {
+			switch p["action"] {
+			case "activate", "deactivate", "status":
+			default:
+				return nil, fmt.Errorf("ttp: amsi action must be activate, deactivate or status")
+			}
+			return obj(map[string]any{"action": p["action"]}), nil
+		},
+	})
+
+	Register(&Spec{
+		Name:        "etw",
+		Description: "Query or change ETW security-control state (Phase 5B: scaffolding only)",
+		Args: []Arg{
+			{Name: "action", Required: true, Description: "activate | deactivate | status"},
+		},
+		Generate: func(p map[string]string) ([]byte, error) {
+			switch p["action"] {
+			case "activate", "deactivate", "status":
+			default:
+				return nil, fmt.Errorf("ttp: etw action must be activate, deactivate or status")
+			}
+			return obj(map[string]any{"action": p["action"]}), nil
+		},
+	})
 }

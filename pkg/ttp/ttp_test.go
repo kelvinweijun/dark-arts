@@ -6,7 +6,7 @@ import (
 )
 
 func TestRegistryLookupAndList(t *testing.T) {
-	for _, name := range []string{"shell", "exec", "sleep", "download", "upload", "kill", "inject", "dll", "persist", "unpersist", "uac", "bof"} {
+	for _, name := range []string{"shell", "exec", "sleep", "download", "upload", "kill", "inject", "dll", "persist", "unpersist", "uac", "bof", "amsi", "etw"} {
 		if _, ok := Lookup(name); !ok {
 			t.Fatalf("expected ttp %q registered", name)
 		}
@@ -14,8 +14,8 @@ func TestRegistryLookupAndList(t *testing.T) {
 	if _, ok := Lookup("nonexistent"); ok {
 		t.Fatal("nonexistent ttp must not resolve")
 	}
-	if len(List()) < 12 {
-		t.Fatalf("expected at least 12 ttps, got %d", len(List()))
+	if len(List()) < 14 {
+		t.Fatalf("expected at least 14 ttps, got %d", len(List()))
 	}
 }
 
@@ -202,5 +202,87 @@ func TestBOFGenerateWithArgs(t *testing.T) {
 	}
 	if out["args"] != "hello world" {
 		t.Fatalf("expected args='hello world', got %v", out["args"])
+	}
+}
+
+func TestAMSIRegistryLookup(t *testing.T) {
+	s, ok := Lookup("amsi")
+	if !ok {
+		t.Fatal("amsi ttp must be registered")
+	}
+	if s.Name != "amsi" {
+		t.Fatalf("expected name amsi, got %s", s.Name)
+	}
+}
+
+func TestAMSIGenerateRequiresAction(t *testing.T) {
+	if _, err := Generate("amsi", map[string]string{}); err == nil {
+		t.Fatal("amsi without action must fail")
+	}
+	if _, err := Generate("amsi", map[string]string{"action": ""}); err == nil {
+		t.Fatal("amsi with empty action must fail")
+	}
+}
+
+func TestAMSIGenerateInvalidAction(t *testing.T) {
+	if _, err := Generate("amsi", map[string]string{"action": "bogus"}); err == nil {
+		t.Fatal("amsi with invalid action must fail")
+	}
+}
+
+func TestAMSIGenerateValid(t *testing.T) {
+	for _, action := range []string{"activate", "deactivate", "status"} {
+		b, err := Generate("amsi", map[string]string{"action": action})
+		if err != nil {
+			t.Fatalf("amsi %s: %v", action, err)
+		}
+		var out map[string]string
+		if err := json.Unmarshal(b, &out); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if out["action"] != action {
+			t.Fatalf("amsi payload mismatch: %v", out)
+		}
+	}
+}
+
+func TestETWRegistryLookup(t *testing.T) {
+	s, ok := Lookup("etw")
+	if !ok {
+		t.Fatal("etw ttp must be registered")
+	}
+	if s.Name != "etw" {
+		t.Fatalf("expected name etw, got %s", s.Name)
+	}
+}
+
+func TestETWGenerateRequiresAction(t *testing.T) {
+	if _, err := Generate("etw", map[string]string{}); err == nil {
+		t.Fatal("etw without action must fail")
+	}
+	if _, err := Generate("etw", map[string]string{"action": ""}); err == nil {
+		t.Fatal("etw with empty action must fail")
+	}
+}
+
+func TestETWGenerateInvalidAction(t *testing.T) {
+	if _, err := Generate("etw", map[string]string{"action": "bogus"}); err == nil {
+		t.Fatal("etw with invalid action must fail")
+	}
+}
+
+func TestETWGenerateValid(t *testing.T) {
+	for _, action := range []string{"activate", "deactivate", "status"} {
+		b, err := Generate("etw", map[string]string{"action": action})
+		if err != nil {
+			t.Fatalf("etw %s: %v", action, err)
+		}
+		var out map[string]string
+		if err := json.Unmarshal(b, &out); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if out["action"] != action {
+			t.Fatalf("etw payload mismatch: %v", out)
+		}
 	}
 }

