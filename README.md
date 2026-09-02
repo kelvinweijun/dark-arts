@@ -171,7 +171,7 @@ Commands:
 | `session <id>` | session detail |
 | `touch <id> <pub_hex>` | register a session (id + agent public key) |
 | `ttps` | list available task types |
-| `task <sid> <type> [k=v …]` | issue a task (e.g. `task <sid> shell cmd=echo hello`, `task <sid> bof data=<b64> fn=go`) |
+| `task <sid> <type> [k=v …]` | issue a task (e.g. `task <sid> shell cmd=echo hello`, `task <sid> bof data=<b64> fn=go`, `task <sid> amsi action=activate`) |
 | `tasks` | list task queue |
 | `results [sid]` | list results |
 | `kill <sid>` | send a kill directive (beacon exits cleanly) |
@@ -543,6 +543,60 @@ Result: `Test 42` and `Hi` appear in the output.
 - No dynamic linking — all symbols must be resolved at load time.
 - The BOF artifact (`bof_test/bof_test.obj`) is precompiled and checked into the repository for testing.
 
+### AMSI bypass and ETW patching (`pkg/securityctl`)
+
+The beacon can disable AMSI (Antimalware Scan Interface) and ETW (Event Tracing for Windows) at runtime to prevent security products from inspecting in-memory tasking, BOF execution, and payload buffers.
+
+**How it works:**
+
+Both controls patch function prologues in-memory in the beacon's own `amsi.dll` and `ntdll.dll`:
+
+- **AMSI** — overwrites the first bytes of `AmsiScanBuffer` (the function AV engines hook to inspect buffers before scan) with a `mov eax, E_INVALIDARG; ret` stub, causing every `AmsiScanBuffer` call to return error immediately without scanning.
+- **ETW** — overwrites the first bytes of `EtwEventWrite` (the function Windows uses to log ETW events) with a `xor eax,eax; ret` stub, silencing ETW event emission from the beacon process. Patches the **live** ntdll in memory (not a clean copy), so the ETW stop is real.
+
+**Hardening (Defender-evading):**
+
+The patching uses multiple techniques to defeat static and behavioral detection:
+
+| Technique | Purpose |
+|-----------|---------|
+| Randomized patch patterns | 5 variants per control (not static `33 C0 C3`); pattern chosen randomly per session |
+| KnownDlls section mapping | `NtOpenSection` + `NtMapViewOfSection` on `\KnownDlls\<dll>` to resolve exports from a pristine on-disk copy before patching the live one |
+| Timing jitter | 100μs–5ms random sleep between protection flip and write to break timing-based detection |
+| `0xCC` (int3) padding | Replaces `0x90` NOP sled padding — int3 is the standard compiler padding byte and looks like legitimate code |
+| Restore to `PAGE_EXECUTE_READ` (0x20) | Not `PAGE_READONLY` (0x02) — the page must remain executable for the beacon to function |
+
+**Console usage:**
+
+```
+dark-arts> task <sid> amsi action=activate    # patch AmsiScanBuffer (disable AMSI)
+dark-arts> task <sid> amsi action=status      # check current state
+dark-arts> task <sid> amsi action=deactivate  # restore original prologue
+dark-arts> task <sid> etw  action=activate    # patch EtwEventWrite (disable ETW)
+dark-arts> task <sid> etw  action=status
+dark-arts> task <sid> etw  action=deactivate  # restore original prologue
+```
+
+**Payload schema:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `action` | yes | `activate` (patch), `deactivate` (restore), or `status` (query) |
+
+**Lifecycle:**
+
+- AMSI and ETW are initialized at beacon startup if `cfg.AMSI`/`cfg.ETW` are true (env vars `DARK_ARTS_AMSI`/`DARK_ARTS_ETW`, or baked via `-ldflags`).
+- Both are automatically restored (`Restore()`) when the beacon exits — the original prologues are saved at first patch and written back on shutdown.
+- Disable is idempotent: calling `deactivate` on an already-disabled control is a no-op; `status` returns the current state.
+- Tasks are processed sequentially (no concurrent access) — safe without locks.
+
+**Limitations:**
+
+- Windows AMD64 only (non-Windows stubs return "not implemented").
+- Patches are per-process — they do not affect other processes.
+- Kernel-level ETW (`EtwEventWriteEx`, kernel traced sessions) cannot be patched from user mode.
+- Defender may still flag the beacon binary at load time via static signatures; the patching defeats runtime behavioral detection, not static analysis.
+
 ### Sleep mask (`pkg/sleepmask`)
 
 The beacon can mask its in-memory key material and payload buffers during every sleep cycle, so a memory scan or crash dump taken while the beacon is idle sees XOR-encrypted bytes at rest and no injected RX pages:
@@ -590,7 +644,7 @@ All binaries read `DARK_ARTS_*` variables. Common ones: `DARK_ARTS_LOG_LEVEL` (d
 | `server` | `DARK_ARTS_LISTEN` (default `:9000`), `DARK_ARTS_API_KEY`, `DARK_ARTS_EDGE`, `DARK_ARTS_PUMP_INTERVAL`, `DARK_ARTS_SERVER_SEED`, `DARK_ARTS_STATE_DIR` |
 | `edge` | `DARK_ARTS_LISTEN` (`:8443`), `DARK_ARTS_STORE` (`file`\|`minio`), `DARK_ARTS_STORE_DIR`, `DARK_ARTS_COVER_HTML`, `DARK_ARTS_S3_ENDPOINT`/`DARK_ARTS_S3_ACCESS_KEY`/`DARK_ARTS_S3_SECRET_KEY`/`DARK_ARTS_S3_BUCKET`/`DARK_ARTS_S3_SECURE` |
 | `relay` | `DARK_ARTS_RELAY_LISTEN` (`:7443`), `DARK_ARTS_UPSTREAM` (comma-separated), `DARK_ARTS_STORE_DIR`, `DARK_ARTS_RETRY` |
-| `beacon` | `DARK_ARTS_SEED`, `DARK_ARTS_SERVER_PUB`, `DARK_ARTS_EDGE` (comma-separated candidates, tried in order), `DARK_ARTS_SID` (override), `DARK_ARTS_SLEEP`, `DARK_ARTS_JITTER`, `DARK_ARTS_TASK_TIMEOUT`, `DARK_ARTS_STATE_DIR`, `DARK_ARTS_UA`, `DARK_ARTS_MIMIC`, `DARK_ARTS_NOISE`, `DARK_ARTS_SLEEP_MASK` |
+| `beacon` | `DARK_ARTS_SEED`, `DARK_ARTS_SERVER_PUB`, `DARK_ARTS_EDGE` (comma-separated candidates, tried in order), `DARK_ARTS_SID` (override), `DARK_ARTS_SLEEP`, `DARK_ARTS_JITTER`, `DARK_ARTS_TASK_TIMEOUT`, `DARK_ARTS_STATE_DIR`, `DARK_ARTS_UA`, `DARK_ARTS_MIMIC`, `DARK_ARTS_NOISE`, `DARK_ARTS_SLEEP_MASK`, `DARK_ARTS_AMSI`, `DARK_ARTS_ETW` |
 | `console` | `DARK_ARTS_SERVER_URL` (`http://127.0.0.1:9000`), `DARK_ARTS_API_KEY`, `DARK_ARTS_OP_ID` |
 | `stager` | flags `-blob`, `-key`, `-manifest-out`, `-dd-dir`, `-store-dir`, `-ref`, `-operator-pub` (or `DARK_ARTS_OPERATOR_PUB`), `-loader memory\|child` |
 

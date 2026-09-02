@@ -89,6 +89,12 @@ type threadBasicInfo struct {
 	BasePriority   int32
 }
 
+// Init eagerly initializes the syscall table and optional unhook pass.
+// Safe to call multiple times; guarded by sync.Once.
+func Init() error {
+	return initSys()
+}
+
 func initSys() error {
 	sysOnce.Do(func() { sysErr = resolve() })
 	return sysErr
