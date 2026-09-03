@@ -18,9 +18,17 @@ func NewETWControl() *ETWControl {
 }
 
 func (e *ETWControl) Initialize() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.status == StatusInitialized || e.status == StatusEnabled || e.status == StatusDisabled {
+		return e.initErr
+	}
+
 	fp, err := resolveFuncByHash("ntdll.dll", "EtwEventWrite")
 	if err != nil {
-		return e.markInitialized(fmt.Errorf("securityctl: etw: resolve: %w", err))
+		e.initErr = err
+		e.status = StatusUnsupported
+		return err
 	}
 
 	knownDllFP, kerr := resolveFuncFromKnownDlls("ntdll.dll", "EtwEventWrite")
@@ -37,38 +45,49 @@ func (e *ETWControl) Initialize() error {
 	}
 
 	e.fp = fp
-	return e.markInitialized(nil)
+	e.status = StatusInitialized
+	return nil
 }
 
 func (e *ETWControl) Enable() error {
-	if err := e.markEnabled(); err != nil {
-		return err
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.status == StatusUnknown {
+		return ErrNotInitialized
+	}
+	if e.status == StatusUnsupported {
+		return ErrInitializeFailed
 	}
 	if e.fp == nil {
-		e.markDisabled()
+		e.status = StatusDisabled
 		return fmt.Errorf("securityctl: etw: not initialized")
 	}
 	e.fp.patch = randomEtwPatchBytes()
 	if err := applyPatch(e.fp); err != nil {
-		e.markDisabled()
+		e.status = StatusDisabled
 		return err
 	}
+	e.status = StatusEnabled
 	return nil
 }
 
 func (e *ETWControl) Disable() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.fp == nil {
-		e.markDisabled()
+		e.status = StatusDisabled
 		return nil
 	}
 	if err := restorePatch(e.fp); err != nil {
 		return err
 	}
-	e.markDisabled()
+	e.status = StatusDisabled
 	return nil
 }
 
 func (e *ETWControl) Restore() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.fp == nil {
 		return
 	}

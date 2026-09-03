@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -23,7 +22,6 @@ const (
 )
 
 type funcPatch struct {
-	mu       sync.Mutex
 	addr     uintptr
 	orig     []byte
 	patch    []byte
@@ -325,8 +323,6 @@ func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 }
 
 func applyPatch(fp *funcPatch) error {
-	fp.mu.Lock()
-	defer fp.mu.Unlock()
 	if len(fp.patch) == 0 {
 		return errors.New("securityctl: no patch bytes")
 	}
@@ -353,8 +349,6 @@ func applyPatch(fp *funcPatch) error {
 }
 
 func restorePatch(fp *funcPatch) error {
-	fp.mu.Lock()
-	defer fp.mu.Unlock()
 	if len(fp.orig) == 0 {
 		return errors.New("securityctl: no original bytes")
 	}
