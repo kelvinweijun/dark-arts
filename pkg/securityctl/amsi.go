@@ -36,7 +36,7 @@ func (a *AMSIControl) Enable() error {
 		a.markDisabled()
 		return fmt.Errorf("securityctl: amsi: not initialized")
 	}
-	a.fp.patch = randomPatchBytes()
+	a.fp.patch = randomAmsiPatchBytes()
 	if err := applyPatch(a.fp); err != nil {
 		a.markDisabled()
 		return err

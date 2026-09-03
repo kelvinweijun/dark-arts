@@ -254,10 +254,10 @@ func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 	}
 }
 
-func TestRandomPatchBytes_AllVariantsSetEAX(t *testing.T) {
+func TestRandomAmsiPatchBytes_Contract(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {
-		patch := randomPatchBytes()
+		patch := randomAmsiPatchBytes()
 		// Bytes 0..6 must be: 41 C7 01 00 00 00 00 (mov dword ptr [r9], 0)
 		if patch[0] != 0x41 || patch[1] != 0xC7 || patch[2] != 0x01 {
 			t.Fatalf("patch does not start with mov [r9],0: %02X %02X %02X", patch[0], patch[1], patch[2])
@@ -267,26 +267,25 @@ func TestRandomPatchBytes_AllVariantsSetEAX(t *testing.T) {
 		}
 		// Bytes 7..N must be a valid zeroing instruction.
 		switch patch[7] {
-		case 0x33: // xor eax, eax
+		case 0x33:
 			if patch[8] != 0xC0 {
 				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[7], patch[8])
 			}
-		case 0x31: // xor eax, eax (alternative encoding)
+		case 0x31:
 			if patch[8] != 0xC0 {
 				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[7], patch[8])
 			}
-		case 0x29: // sub eax, eax
+		case 0x29:
 			if patch[8] != 0xC0 {
 				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[7], patch[8])
 			}
-		case 0x48: // xor rax, rax
+		case 0x48:
 			if patch[8] != 0x31 || patch[9] != 0xC0 {
 				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[7], patch[8], patch[9])
 			}
 		default:
 			t.Fatalf("unexpected zeroing opcode at offset 7: %02X", patch[7])
 		}
-		// Find ret (C3) — must follow the zeroing instruction.
 		retIdx := -1
 		for j := 7; j < len(patch); j++ {
 			if patch[j] == 0xC3 {
@@ -294,16 +293,67 @@ func TestRandomPatchBytes_AllVariantsSetEAX(t *testing.T) {
 				break
 			}
 		}
-		zeroLen := 2 // default: 2-byte instruction
-		switch patch[7] {
-		case 0x48:
+		zeroLen := 2
+		if patch[7] == 0x48 {
 			zeroLen = 3
 		}
 		expectedRet := 7 + zeroLen
 		if retIdx != expectedRet {
-			t.Fatalf("ret at index %d, want %d (after %d-byte zeroing)", retIdx, expectedRet, zeroLen)
+			t.Fatalf("ret at index %d, want %d", retIdx, expectedRet)
 		}
 		seen[patch[7]] = true
+	}
+	if len(seen) < 4 {
+		t.Errorf("only %d unique zeroing variants seen in 1000 iterations: %v", len(seen), seen)
+	}
+}
+
+func TestRandomEtwPatchBytes_Contract(t *testing.T) {
+	seen := make(map[byte]bool)
+	for i := 0; i < 1000; i++ {
+		patch := randomEtwPatchBytes()
+		// ETW patch must NOT touch R9 — first byte must be a zeroing
+		// instruction, not 0x41 (REX.B prefix for R9).
+		if patch[0] == 0x41 {
+			t.Fatalf("ETW patch incorrectly starts with REX.B prefix (R9 access): %02X %02X %02X", patch[0], patch[1], patch[2])
+		}
+		// First instruction must be a valid zeroing opcode.
+		switch patch[0] {
+		case 0x33:
+			if patch[1] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[0], patch[1])
+			}
+		case 0x31:
+			if patch[1] != 0xC0 {
+				t.Fatalf("invalid xor eax,eax: %02X %02X", patch[0], patch[1])
+			}
+		case 0x29:
+			if patch[1] != 0xC0 {
+				t.Fatalf("invalid sub eax,eax: %02X %02X", patch[0], patch[1])
+			}
+		case 0x48:
+			if patch[1] != 0x31 || patch[2] != 0xC0 {
+				t.Fatalf("invalid xor rax,rax: %02X %02X %02X", patch[0], patch[1], patch[2])
+			}
+		default:
+			t.Fatalf("unexpected zeroing opcode: %02X", patch[0])
+		}
+		// Ret must follow the zeroing instruction.
+		retIdx := -1
+		for j := 0; j < len(patch); j++ {
+			if patch[j] == 0xC3 {
+				retIdx = j
+				break
+			}
+		}
+		zeroLen := 2
+		if patch[0] == 0x48 {
+			zeroLen = 3
+		}
+		if retIdx != zeroLen {
+			t.Fatalf("ret at index %d, want %d", retIdx, zeroLen)
+		}
+		seen[patch[0]] = true
 	}
 	if len(seen) < 4 {
 		t.Errorf("only %d unique zeroing variants seen in 1000 iterations: %v", len(seen), seen)

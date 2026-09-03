@@ -48,7 +48,7 @@ func (e *ETWControl) Enable() error {
 		e.markDisabled()
 		return fmt.Errorf("securityctl: etw: not initialized")
 	}
-	e.fp.patch = randomPatchBytes()
+	e.fp.patch = randomEtwPatchBytes()
 	if err := applyPatch(e.fp); err != nil {
 		e.markDisabled()
 		return err
