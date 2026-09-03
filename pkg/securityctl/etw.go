@@ -74,6 +74,12 @@ func (e *ETWControl) Enable() error {
 func (e *ETWControl) Disable() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.status == StatusUnknown {
+		return ErrNotInitialized
+	}
+	if e.status == StatusUnsupported {
+		return ErrInitializeFailed
+	}
 	if e.fp == nil {
 		e.status = StatusDisabled
 		return nil

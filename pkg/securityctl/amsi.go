@@ -62,6 +62,12 @@ func (a *AMSIControl) Enable() error {
 func (a *AMSIControl) Disable() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.status == StatusUnknown {
+		return ErrNotInitialized
+	}
+	if a.status == StatusUnsupported {
+		return ErrInitializeFailed
+	}
 	if a.fp == nil {
 		a.status = StatusDisabled
 		return nil
