@@ -1,4 +1,4 @@
-# Dark Arts — Security Policy
+# Security Policy
 
 ## Scope
 
