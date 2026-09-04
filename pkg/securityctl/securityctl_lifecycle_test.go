@@ -257,6 +257,56 @@ func TestAMSIControl_PatchVisibleAfterEnable(t *testing.T) {
 	}
 }
 
+func TestAMSIControl_ApplyPatchRefusesIfBytesChanged(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	// Corrupt the saved original bytes so they no longer match what's
+	// actually at the function address. applyPatch validates that the
+	// current live bytes match fp.orig before writing — this should fail.
+	a.fp.orig[0] ^= 0xFF
+	err := a.Enable()
+	if err == nil {
+		t.Errorf("Enable() with corrupted orig should have refused, got nil")
+	}
+	if s := a.Status(); s != StatusDisabled {
+		t.Errorf("status after failed Enable = %v, want StatusDisabled", s)
+	}
+}
+
+func TestAMSIControl_RestoreSkipsIfAlreadyUnpatched(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() = %v", err)
+	}
+	// Read the byte that should be patched.
+	patchedByte := *(*byte)(unsafe.Add(toPtr(a.fp.addr), 0))
+
+	// Corrupt fp.patch so restorePatch won't recognize the live bytes
+	// as "our patch". It should skip the write entirely.
+	a.fp.patch[0] ^= 0xFF
+	if err := a.Disable(); err != nil {
+		t.Fatalf("Disable() = %v", err)
+	}
+
+	// The byte at the function address should still be the patched value,
+	// NOT the original — restorePatch should have been a no-op.
+	liveAfter := *(*byte)(unsafe.Add(toPtr(a.fp.addr), 0))
+	if liveAfter != patchedByte {
+		t.Errorf("restorePatch should have skipped but byte changed: got %02X, want %02X (patched value)", liveAfter, patchedByte)
+	}
+}
+
 func TestRandomAmsiPatchBytes_Contract(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {

