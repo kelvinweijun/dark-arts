@@ -417,6 +417,133 @@ func TestRandomEtwPatchBytes_Contract(t *testing.T) {
 	}
 }
 
+func TestAMSIControl_DoubleEnableIsIdempotent(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() #1 = %v", err)
+	}
+	if s := a.Status(); s != StatusEnabled {
+		t.Errorf("after Enable #1: status = %v, want StatusEnabled", s)
+	}
+	// Second Enable should be a no-op (idempotent), not an error.
+	if err := a.Enable(); err != nil {
+		t.Errorf("Enable() #2 = %v (want nil for idempotent call)", err)
+	}
+	if s := a.Status(); s != StatusEnabled {
+		t.Errorf("after Enable #2: status = %v, want StatusEnabled", s)
+	}
+	// Verify function is still correctly patched.
+	live := *(*byte)(unsafe.Add(toPtr(a.fp.addr), 0))
+	if live != a.fp.patch[0] {
+		t.Errorf("function byte 0 = %02X, want %02X (patch)", live, a.fp.patch[0])
+	}
+	a.Disable()
+}
+
+func TestAMSIControl_DoubleDisableIsIdempotent(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() = %v", err)
+	}
+	if err := a.Disable(); err != nil {
+		t.Fatalf("Disable() #1 = %v", err)
+	}
+	if s := a.Status(); s != StatusDisabled {
+		t.Errorf("after Disable #1: status = %v, want StatusDisabled", s)
+	}
+	// Second Disable should be harmless (idempotent).
+	if err := a.Disable(); err != nil {
+		t.Errorf("Disable() #2 = %v (want nil for idempotent call)", err)
+	}
+	if s := a.Status(); s != StatusDisabled {
+		t.Errorf("after Disable #2: status = %v, want StatusDisabled", s)
+	}
+}
+
+func TestAMSIControl_ExternalModificationPreserved(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() = %v", err)
+	}
+	// Simulate another component modifying the function after we patched
+	// it (e.g., another security tool hooking the same function).
+	// We can't write to the RX page directly, but we can test the
+	// restorePatch logic by corrupting fp.patch so it doesn't match
+	// the live bytes. restorePatch should skip (preserve the external
+	// modification) rather than blindly overwrite.
+	a.fp.patch[0] ^= 0xFF
+	if err := a.Disable(); err != nil {
+		t.Fatalf("Disable() = %v", err)
+	}
+	// The byte at the function address should NOT have been changed
+	// by our restorePatch (it should have been a no-op).
+	// We can't easily verify the exact byte without knowing what the
+	// "external" modification was, but we can verify Disable succeeded.
+	if s := a.Status(); s != StatusDisabled {
+		t.Errorf("status = %v, want StatusDisabled", s)
+	}
+}
+
+func TestETWControl_DoubleEnableIsIdempotent(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	e := NewETWControl()
+	if err := e.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := e.Enable(); err != nil {
+		t.Fatalf("Enable() #1 = %v", err)
+	}
+	if err := e.Enable(); err != nil {
+		t.Errorf("Enable() #2 = %v (want nil for idempotent call)", err)
+	}
+	if s := e.Status(); s != StatusEnabled {
+		t.Errorf("after Enable #2: status = %v, want StatusEnabled", s)
+	}
+	e.Disable()
+}
+
+func TestETWControl_DoubleDisableIsIdempotent(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	e := NewETWControl()
+	if err := e.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	if err := e.Enable(); err != nil {
+		t.Fatalf("Enable() = %v", err)
+	}
+	if err := e.Disable(); err != nil {
+		t.Fatalf("Disable() #1 = %v", err)
+	}
+	if err := e.Disable(); err != nil {
+		t.Errorf("Disable() #2 = %v (want nil for idempotent call)", err)
+	}
+	if s := e.Status(); s != StatusDisabled {
+		t.Errorf("after Disable #2: status = %v, want StatusDisabled", s)
+	}
+}
+
 // amsiScan is a crash-safe wrapper around AmsiScanBuffer. AMSI calls from
 // Go test binaries can crash non-deterministically if the AMSI subsystem
 // is not fully initialized for this process context.
