@@ -58,6 +58,9 @@ func (e *ETWControl) Enable() error {
 	if e.status == StatusUnsupported {
 		return ErrInitializeFailed
 	}
+	if e.status == StatusEnabled {
+		return nil // already enabled — idempotent no-op
+	}
 	if e.fp == nil {
 		e.status = StatusDisabled
 		return fmt.Errorf("securityctl: etw: not initialized")
@@ -91,6 +94,11 @@ func (e *ETWControl) Disable() error {
 	return nil
 }
 
+// Restore performs cleanup on process exit or kill. It is safe to call
+// even after failed Initialize or Enable. Errors from the underlying
+// restorePatch are silently discarded — this is an interface limitation
+// (Restore returns void). If restoration fails, the process may still
+// contain modified function bytes.
 func (e *ETWControl) Restore() {
 	e.mu.Lock()
 	defer e.mu.Unlock()

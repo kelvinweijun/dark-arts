@@ -389,6 +389,13 @@ func applyPatch(fp *funcPatch) error {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.patch[i]
 	}
 
+	// Flush the instruction cache so the processor discards any stale
+	// cached instructions for the modified region. Microsoft documents
+	// this as required after writing executable code.
+	k32 := syscall.NewLazyDLL("kernel32.dll")
+	flush := k32.NewProc("FlushInstructionCache")
+	flush.Call(evasion.CurrentProcess, fp.addr, patchLen)
+
 	// Restore original page protection. On failure, leave the page
 	// writable with the original protection unset. The caller receives
 	// the error and knows the protection state is inconsistent.
@@ -433,6 +440,11 @@ func restorePatch(fp *funcPatch) error {
 	for i := 0; i < len(fp.orig); i++ {
 		*(*byte)(unsafe.Add(toPtr(fp.addr), i)) = fp.orig[i]
 	}
+
+	// Flush instruction cache after restoring original code.
+	k32 := syscall.NewLazyDLL("kernel32.dll")
+	flush := k32.NewProc("FlushInstructionCache")
+	flush.Call(evasion.CurrentProcess, fp.addr, patchLen)
 
 	// Restore original page protection. On failure, leave the page
 	// writable — don't write the patch back (that would create a

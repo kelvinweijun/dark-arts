@@ -307,6 +307,41 @@ func TestAMSIControl_RestoreSkipsIfAlreadyUnpatched(t *testing.T) {
 	}
 }
 
+func TestAMSIControl_DisableEnableCycle(t *testing.T) {
+	if err := evasion.Init(); err != nil {
+		t.Skipf("evasion init failed: %v", err)
+	}
+	a := NewAMSIControl()
+	if err := a.Initialize(); err != nil {
+		t.Fatalf("Initialize() = %v", err)
+	}
+	// First enable.
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() #1 = %v", err)
+	}
+	patch1 := make([]byte, patchLen)
+	for i := 0; i < patchLen; i++ {
+		patch1[i] = *(*byte)(unsafe.Add(toPtr(a.fp.addr), i))
+	}
+	// Disable.
+	if err := a.Disable(); err != nil {
+		t.Fatalf("Disable() = %v", err)
+	}
+	// Re-enable — should generate a new random patch and succeed.
+	if err := a.Enable(); err != nil {
+		t.Fatalf("Enable() #2 after Disable = %v", err)
+	}
+	if s := a.Status(); s != StatusEnabled {
+		t.Errorf("after re-Enable: status = %v, want StatusEnabled", s)
+	}
+	// Verify the function is patched (byte 0 matches the stored patch).
+	live := *(*byte)(unsafe.Add(toPtr(a.fp.addr), 0))
+	if live != a.fp.patch[0] {
+		t.Errorf("after re-Enable: byte 0 = %02X, want %02X (patch)", live, a.fp.patch[0])
+	}
+	a.Disable()
+}
+
 func TestRandomAmsiPatchBytes_Contract(t *testing.T) {
 	seen := make(map[byte]bool)
 	for i := 0; i < 1000; i++ {

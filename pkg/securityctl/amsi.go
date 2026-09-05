@@ -46,6 +46,9 @@ func (a *AMSIControl) Enable() error {
 	if a.status == StatusUnsupported {
 		return ErrInitializeFailed
 	}
+	if a.status == StatusEnabled {
+		return nil // already enabled — idempotent no-op
+	}
 	if a.fp == nil {
 		a.status = StatusDisabled
 		return fmt.Errorf("securityctl: amsi: not initialized")
@@ -79,6 +82,11 @@ func (a *AMSIControl) Disable() error {
 	return nil
 }
 
+// Restore performs cleanup on process exit or kill. It is safe to call
+// even after failed Initialize or Enable. Errors from the underlying
+// restorePatch are silently discarded — this is an interface limitation
+// (Restore returns void). If restoration fails, the process may still
+// contain modified function bytes.
 func (a *AMSIControl) Restore() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
