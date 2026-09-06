@@ -52,7 +52,7 @@ Data flow:
 | dead drops | Passive rendezvous (DNS TXT zone, file dir, gist) | operator identity | content is always signed + encrypted |
 | `minio` (lab) | S3-compatible object store holding encrypted blobs | plaintext | |
 
-### Crypto model
+### Cryptographic model
 
 - **Identities:** ed25519 keypairs derived from seeds. The server has one (`DARK_ARTS_SERVER_SEED`); every agent has one; the operator signs tasks and stage drops with another (`-operator-pub`).
 - **Session IDs:** `sid = sha256(agent_public_key)[:16]` (32 hex chars). Sessions are registered on the server by `touch <sid> <agent_pub_hex>`.
