@@ -3,7 +3,7 @@
 // Package sleepmask obfuscates sensitive beacon memory while it sleeps
 // between check-ins: key material (XORed in place — byte slices are never
 // scanned by the Go GC) and owned allocations (XORed and flipped to
-// PAGE_NOACCESS via direct syscalls, so memory scanners cannot read them).
+// PAGE_NOACCESS via indirect syscalls, so memory scanners cannot read them).
 // The XOR key lives on a dedicated non-heap page that is only made writable
 // during mask/unmask cycles.
 package sleepmask

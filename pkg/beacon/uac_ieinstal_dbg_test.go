@@ -194,6 +194,7 @@ func fopMoveFile(srcPath, dstDir string) error {
 }
 
 func TestDbgIEInstal(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)

@@ -24,6 +24,7 @@ var probeCLSIDs = []struct {
 }
 
 func TestDbgProbeAutoApproved(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)
@@ -46,6 +47,7 @@ func TestDbgProbeAutoApproved(t *testing.T) {
 }
 
 func TestDbgProbeEasInvoker(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)

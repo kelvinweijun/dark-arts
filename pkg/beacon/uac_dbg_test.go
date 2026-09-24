@@ -11,6 +11,7 @@ import (
 )
 
 func TestDbgBindMatrix(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)

@@ -18,6 +18,7 @@ import (
 // it when asked), which installs the reusable HIGHEST task, then verify a
 // second invocation runs fully silent and returns the elevated output.
 func TestUacTaskEndToEnd(t *testing.T) {
+	skipUnlessUACDebug(t)
 	dir, err := os.MkdirTemp("", "uac-e2e-*")
 	if err != nil {
 		t.Fatal(err)

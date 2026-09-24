@@ -2,6 +2,10 @@
 
 package bof
 
+// callFn invokes an arbitrary Windows x64 function pointer with up to three
+// arguments and returns rax.
+func callFn(fn uintptr, a, b, c uintptr) uintptr
+
 // CallFunc calls a function pointer with up to 3 arguments using the Windows x64 calling convention.
 //	func CallFunc(fn uintptr, a1, a2, a3 uintptr) uintptr
 func CallFunc(fn, a1, a2, a3 uintptr) uintptr

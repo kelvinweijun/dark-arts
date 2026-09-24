@@ -3,10 +3,9 @@
 // security-related process modifications in a lifecycle-safe, idempotent,
 // and concurrency-safe manner.
 //
-// Phase 5B implements only the interface, configuration plumbing, and
-// test scaffolding. No operational security-control bypass code is included.
-// The resulting implementation is non-operational with respect to bypassing
-// Windows security controls.
+// Concrete controls (AMSI, ETW) apply and restore real in-memory patches
+// via pkg/evasion once Initialize() succeeds. On unsupported platforms the
+// stub implementations return ErrUnsupported and perform no modification.
 package securityctl
 
 import (
@@ -38,14 +37,12 @@ const (
 	// control has not been enabled.
 	StatusInitialized
 
-	// StatusEnabled indicates the abstraction's logical state is "enabled".
-	// In Phase 5B this is a no-op; no real security-control modification occurs.
-	// Phase 5C will apply the actual modification when this state is entered.
+	// StatusEnabled indicates the control is actively applied (patched
+	// into the target module).
 	StatusEnabled
 
-	// StatusDisabled indicates the abstraction's logical state is "disabled".
-	// The control was previously enabled (logically) but has been reverted.
-	// In Phase 5B this is a no-op; no real security-control restoration occurs.
+	// StatusDisabled indicates the control was previously enabled but has
+	// been reverted to the original bytes.
 	StatusDisabled
 
 	// StatusUnsupported indicates the platform, OS, or configuration does
@@ -80,10 +77,6 @@ func (s ControlStatus) String() string {
 //
 // Initialize must be called before Enable or Disable. Enable and Disable
 // are idempotent. Restore is always safe to call.
-//
-// Phase 5B: all implementations are no-op stubs. Enable/Disable/Restore
-// transition the abstraction's logical state but perform no modification
-// of real Windows security controls (AMSI, ETW, or otherwise).
 type SecurityControl interface {
 	// Name returns the control name (e.g., "amsi", "etw").
 	Name() string
@@ -94,16 +87,12 @@ type SecurityControl interface {
 	// Idempotent: calling multiple times returns the same result.
 	Initialize() error
 
-	// Enable transitions the abstraction to the "enabled" logical state.
-	// Phase 5B: no-op stub returning nil. No real security-control
-	// modification occurs.
+	// Enable applies the control (patches the target).
 	// Requires Initialize() to have succeeded.
 	// Idempotent: calling multiple times is safe.
 	Enable() error
 
-	// Disable transitions the abstraction to the "disabled" logical state.
-	// Phase 5B: no-op stub returning nil. No real security-control
-	// restoration occurs.
+	// Disable reverts a previously applied control.
 	// Idempotent: calling multiple times is safe.
 	// Returns nil if not currently enabled.
 	Disable() error
@@ -112,7 +101,6 @@ type SecurityControl interface {
 	Status() ControlStatus
 
 	// Restore performs cleanup on process exit or kill.
-	// Phase 5B: no-op.
 	// Must be safe to call even if Initialize() or Enable() failed.
 	Restore()
 }

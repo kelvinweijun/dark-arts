@@ -36,7 +36,7 @@ TEXT ·CallFunc(SB), NOSPLIT, $0-40
 
 // CallFunc2 calls a function pointer with 2 arguments.
 //	func CallFunc2(fn, a1, a2 uintptr) uintptr
-TEXT ·CallFunc2(SB), NOSPLIT, $0-24
+TEXT ·CallFunc2(SB), NOSPLIT, $0-32
 	MOVQ fn+0(FP), AX
 	MOVQ a1+8(FP), CX
 	MOVQ a2+16(FP), DX
@@ -48,7 +48,7 @@ TEXT ·CallFunc2(SB), NOSPLIT, $0-24
 
 // CallFunc0 calls a function pointer with no arguments.
 //	func CallFunc0(fn uintptr) uintptr
-TEXT ·CallFunc0(SB), NOSPLIT, $0-8
+TEXT ·CallFunc0(SB), NOSPLIT, $0-16
 	MOVQ fn+0(FP), AX
 	SUBQ $0x30, SP
 	CALL AX

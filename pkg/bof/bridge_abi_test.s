@@ -1,0 +1,231 @@
+//go:build windows && amd64
+
+#include "textflag.h"
+
+// setAndCallBeaconPrintf(fn, msg, outRegs)
+// Sets MSVC callee-saved GPRs to the magic values the test expects,
+// calls fn(0, msg, 0) via Microsoft x64 ABI, writes the post-call
+// register values to outRegs[8], then restores the originals.
+//
+// outRegs order: RBX, RBP, RSI, RDI, R12, R13, R14, R15.
+// RBP is recorded but never overwritten (frame pointer).
+TEXT ·setAndCallBeaconPrintf(SB), NOSPLIT|NOFRAME, $0-24
+	MOVQ	fn+0(FP), AX
+	MOVQ	msg+8(FP), R10
+	MOVQ	outRegs+16(FP), R11
+
+	// 0x88: 0x40 call/shadow area + 0x48 save area. Entry SP ≡ 8 (mod 16);
+	// SUB 0x88 → SP ≡ 0 (mod 16) for the MSVC CALL.
+	SUBQ	$0x88, SP
+
+	MOVQ	BX, 0x40(SP)
+	MOVQ	BP, 0x48(SP)
+	MOVQ	SI, 0x50(SP)
+	MOVQ	DI, 0x58(SP)
+	MOVQ	R12, 0x60(SP)
+	MOVQ	R13, 0x68(SP)
+	MOVQ	R14, 0x70(SP)
+	MOVQ	R15, 0x78(SP)
+	MOVQ	R11, 0x38(SP)		// stash outRegs outside shadow
+
+	MOVQ	$0xAAAAAAAA, BX
+	MOVQ	$0xCCCCCCCC, SI
+	MOVQ	$0xDDDDDDDD, DI
+	MOVQ	$0x11111111, R12
+	MOVQ	$0x22222222, R13
+	MOVQ	$0x33333333, R14
+	MOVQ	$0x44444444, R15
+
+	MOVQ	$0, CX
+	MOVQ	R10, DX
+	MOVQ	$0, R8
+	CALL	AX
+
+	MOVQ	0x38(SP), R11
+	MOVQ	BX, 0(R11)
+	MOVQ	BP, 8(R11)
+	MOVQ	SI, 16(R11)
+	MOVQ	DI, 24(R11)
+	MOVQ	R12, 32(R11)
+	MOVQ	R13, 40(R11)
+	MOVQ	R14, 48(R11)
+	MOVQ	R15, 56(R11)
+
+	MOVQ	0x40(SP), BX
+	MOVQ	0x48(SP), BP
+	MOVQ	0x50(SP), SI
+	MOVQ	0x58(SP), DI
+	MOVQ	0x60(SP), R12
+	MOVQ	0x68(SP), R13
+	MOVQ	0x70(SP), R14
+	MOVQ	0x78(SP), R15
+	ADDQ	$0x88, SP
+	RET
+
+// setAndCallBeaconPrintfXMM(fn, msg, outRegs)
+// Sets XMM6–XMM15 to the magic patterns the test expects, calls
+// fn(0, msg, 0), writes post-call XMM values to outRegs[20]
+// (lo/hi uint64 pairs for XMM6..XMM15), restores originals.
+TEXT ·setAndCallBeaconPrintfXMM(SB), NOSPLIT|NOFRAME, $0-24
+	MOVQ	fn+0(FP), AX
+	MOVQ	msg+8(FP), R10
+	MOVQ	outRegs+16(FP), R11
+
+	// 0xC8 = 0xA0 save (XMM6-15) + 0x28 call area. Entry ≡ 8;
+	// 8-0xC8 = -192 ≡ 0 (mod 16).
+	SUBQ	$0xC8, SP
+
+	MOVUPS	X6,  0x00(SP)
+	MOVUPS	X7,  0x10(SP)
+	MOVUPS	X8,  0x20(SP)
+	MOVUPS	X9,  0x30(SP)
+	MOVUPS	X10, 0x40(SP)
+	MOVUPS	X11, 0x50(SP)
+	MOVUPS	X12, 0x60(SP)
+	MOVUPS	X13, 0x70(SP)
+	MOVUPS	X14, 0x80(SP)
+	MOVUPS	X15, 0x90(SP)
+	MOVQ	R11, 0xA0(SP)		// stash outRegs
+	MOVQ	R10, 0xA8(SP)		// stash msg
+	MOVQ	AX,  0xB0(SP)		// stash fn
+
+	// Magic: lo = 0xDEADBEEF0000000N, hi = 0xCAFEBABE0000000N for N=6..F
+	MOVQ	$0xDEADBEEF00000006, R11
+	MOVQ	$0xCAFEBABE00000006, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X6
+
+	MOVQ	$0xDEADBEEF00000007, R11
+	MOVQ	$0xCAFEBABE00000007, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X7
+
+	MOVQ	$0xDEADBEEF00000008, R11
+	MOVQ	$0xCAFEBABE00000008, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X8
+
+	MOVQ	$0xDEADBEEF00000009, R11
+	MOVQ	$0xCAFEBABE00000009, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X9
+
+	MOVQ	$0xDEADBEEF0000000A, R11
+	MOVQ	$0xCAFEBABE0000000A, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X10
+
+	MOVQ	$0xDEADBEEF0000000B, R11
+	MOVQ	$0xCAFEBABE0000000B, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X11
+
+	MOVQ	$0xDEADBEEF0000000C, R11
+	MOVQ	$0xCAFEBABE0000000C, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X12
+
+	MOVQ	$0xDEADBEEF0000000D, R11
+	MOVQ	$0xCAFEBABE0000000D, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X13
+
+	MOVQ	$0xDEADBEEF0000000E, R11
+	MOVQ	$0xCAFEBABE0000000E, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X14
+
+	MOVQ	$0xDEADBEEF0000000F, R11
+	MOVQ	$0xCAFEBABE0000000F, R12
+	MOVQ	R11, 0xB8(SP)
+	MOVQ	R12, 0xC0(SP)
+	MOVUPS	0xB8(SP), X15
+
+	MOVQ	0xA8(SP), R10
+	MOVQ	$0, CX
+	MOVQ	R10, DX
+	MOVQ	$0, R8
+	MOVQ	0xB0(SP), AX
+	CALL	AX
+
+	MOVQ	0xA0(SP), R11
+	MOVUPS	X6,  0x00(R11)
+	MOVUPS	X7,  0x10(R11)
+	MOVUPS	X8,  0x20(R11)
+	MOVUPS	X9,  0x30(R11)
+	MOVUPS	X10, 0x40(R11)
+	MOVUPS	X11, 0x50(R11)
+	MOVUPS	X12, 0x60(R11)
+	MOVUPS	X13, 0x70(R11)
+	MOVUPS	X14, 0x80(R11)
+	MOVUPS	X15, 0x90(R11)
+
+	MOVUPS	0x00(SP), X6
+	MOVUPS	0x10(SP), X7
+	MOVUPS	0x20(SP), X8
+	MOVUPS	0x30(SP), X9
+	MOVUPS	0x40(SP), X10
+	MOVUPS	0x50(SP), X11
+	MOVUPS	0x60(SP), X12
+	MOVUPS	0x70(SP), X13
+	MOVUPS	0x80(SP), X14
+	MOVUPS	0x90(SP), X15
+	ADDQ	$0xC8, SP
+	RET
+
+// testSetR14AndCall(fn, setVal, outR14)
+// Sets R14=setVal, calls fn(0, msg=0, 0) with a NULL format (BeaconPrintf
+// is only used for its side effects on R14), then writes R14 to outR14.
+TEXT ·testSetR14AndCall(SB), NOSPLIT|NOFRAME, $0-24
+	MOVQ	fn+0(FP), AX
+	MOVQ	setVal+8(FP), R14
+	MOVQ	outR14+16(FP), R11
+
+	// 0x38: 0x28 call area + pad. Entry ≡ 8; 8-0x38 = -48 ≡ 0 (mod 16).
+	SUBQ	$0x38, SP
+	MOVQ	R11, 0x28(SP)
+	MOVQ	$0, CX
+	MOVQ	$0, DX
+	MOVQ	$0, R8
+	CALL	AX
+	MOVQ	0x28(SP), R11
+	MOVQ	R14, 0(R11)
+	ADDQ	$0x38, SP
+	RET
+
+// testSetXMM14AndCall(fn, lo, hi, out)
+// Sets XMM14=(lo|hi), calls fn(0,0,0), writes XMM14 to out[16], restores.
+TEXT ·testSetXMM14AndCall(SB), NOSPLIT|NOFRAME, $0-32
+	MOVQ	fn+0(FP), AX
+	MOVQ	lo+8(FP), R10
+	MOVQ	hi+16(FP), R11
+	MOVQ	out+24(FP), R12
+
+	// 0x58: 0x40 save XMM14 + 0x18 call. Entry ≡ 8; 8-0x58 = -80 ≡ 0 (mod 16).
+	SUBQ	$0x58, SP
+	MOVUPS	X14, 0x40(SP)
+	MOVQ	R12, 0x38(SP)
+
+	MOVQ	R10, 0x00(SP)
+	MOVQ	R11, 0x08(SP)
+	MOVUPS	0x00(SP), X14
+
+	MOVQ	$0, CX
+	MOVQ	$0, DX
+	MOVQ	$0, R8
+	CALL	AX
+
+	MOVQ	0x38(SP), R12
+	MOVUPS	X14, 0(R12)
+	MOVUPS	0x40(SP), X14
+	ADDQ	$0x58, SP
+	RET

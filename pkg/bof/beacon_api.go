@@ -246,7 +246,10 @@ func ExecuteBOF(coffBytes []byte, functionName string, args []string) (string, e
 //   %%        → literal '%', no argument consumed
 //   Other specifiers (f, e, g, etc.) → passed as uintptr (raw bits)
 //
-func BeaconPrintfNative(outputType int32, format *byte, argCount int,
+// MSVC x64 ABI: RCX=type, RDX=fmt, R8=first vararg, R9=second vararg.
+// The ABI0 trampoline forwards those as v0/v1; remaining slots are zero.
+// Argument count is derived from the format string, not from a caller-supplied count.
+func BeaconPrintfNative(outputType int32, format *byte,
 	v0, v1, v2, v3, v4, v5, v6, v7 uintptr) {
 	if beaconPrintf == nil || format == nil {
 		return
@@ -257,7 +260,7 @@ func BeaconPrintfNative(outputType int32, format *byte, argCount int,
 	}
 
 	varargs := [8]uintptr{v0, v1, v2, v3, v4, v5, v6, v7}
-	args := parseFormatArgs(f, varargs[:], argCount)
+	args := parseFormatArgs(f, varargs[:], len(varargs))
 	beaconPrintf(f, args...)
 }
 

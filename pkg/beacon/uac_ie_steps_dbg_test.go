@@ -10,6 +10,7 @@ import (
 
 // A: CoInit + bind IUnknown (proven working baseline)
 func TestDbgIE_A(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)
@@ -24,6 +25,7 @@ func TestDbgIE_A(t *testing.T) {
 
 // B: A + CoInitializeSecurity before bind
 func TestDbgIE_B(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)
@@ -40,6 +42,7 @@ func TestDbgIE_B(t *testing.T) {
 
 // C: B + QI IEAxiAdminInstaller from IUnknown
 func TestDbgIE_C(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)
@@ -63,6 +66,7 @@ func TestDbgIE_C(t *testing.T) {
 
 // D: C + InitializeAdminInstaller + QI IEAxiInstaller2
 func TestDbgIE_D(t *testing.T) {
+	skipUnlessUACDebug(t)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	procCoInitializeEx.Call(0, 2)
