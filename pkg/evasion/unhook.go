@@ -14,7 +14,7 @@ const stubPatchLen = 16
 
 // unhookStubs rewrites the live stub prologues of the hash-listed exports
 // from the clean copy, neutralizing any in-memory detours. It returns the
-// number of stubs that differed and were restored. The direct syscall table
+// number of stubs that differed and were restored. The indirect syscall table
 // is unaffected by this either way (SSNs are already resolved); the point is
 // to leave live ntdll's user-mode surface byte-identical to disk so later
 // instrumented callers cannot trip on patched stubs.

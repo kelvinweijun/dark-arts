@@ -32,6 +32,21 @@ func TestSyscallABI(t *testing.T) {
 	}
 }
 
+func TestIndirectSyscallGadget(t *testing.T) {
+	if err := initSys(); err != nil {
+		t.Fatal(err)
+	}
+	if syscallAddr == 0 {
+		t.Fatal("syscallAddr is zero")
+	}
+	p := toPtr(syscallAddr)
+	if rd8(p) != 0x0F || rd8(unsafe.Add(p, 1)) != 0x05 || rd8(unsafe.Add(p, 2)) != 0xC3 {
+		t.Fatalf("syscallAddr %X: want 0F 05 C3, got %02X %02X %02X",
+			syscallAddr, rd8(p), rd8(unsafe.Add(p, 1)), rd8(unsafe.Add(p, 2)))
+	}
+	t.Logf("indirect syscall gadget at %X", syscallAddr)
+}
+
 func TestOpenProcessSelf(t *testing.T) {
 	h, err := OpenProcess(uint32(os.Getpid()))
 	if err != nil {

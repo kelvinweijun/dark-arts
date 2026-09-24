@@ -112,7 +112,7 @@ The `ct` field is a ChaCha20-Poly1305 AEAD ciphertext. The `sig` field is an opt
 | Adversary | Goal | Mitigation |
 |-----------|------|------------|
 | Network observer / DPI | Detect C2 channel | Protocol mimicry (browser UA rotation, nginx cover pages), AEAD-only wire format, polymorphic jitter |
-| Endpoint EDR/AV | Kill implant, capture keys | In-memory-only keys, XOR sleep masking, AMSI/ETW patching, direct syscalls bypass user-mode hooks |
+| Endpoint EDR/AV | Kill implant, capture keys | In-memory-only keys, XOR sleep masking, AMSI/ETW patching, indirect syscalls bypass user-mode hooks |
 | Seized edge server | Recover sessions, identify operator | Edge is stateless, sees no plaintext, no operator data |
 | Seized C2 server | Recover blobs | Blobs encrypted under operator-held keys; server only stores ciphertext |
 | Seized operator machine | Impersonate operator | Ed25519 signing keys are air-gapped / HSM-stored |
@@ -131,9 +131,9 @@ The `ct` field is a ChaCha20-Poly1305 AEAD ciphertext. The `sig` field is an opt
 
 ### Evasion (Anti-Analysis)
 
-**Direct syscalls** (`pkg/evasion`):
+**Indirect syscalls** (`pkg/evasion`):
 - Resolves Nt* syscall numbers from a clean `\KnownDlls\ntdll.dll` section mapping.
-- Issues syscalls via an ABI0 assembler trampoline — no ntdll stub call, no syscall-site scanning.
+- Issues syscalls by CALLing a `syscall; ret` (0F 05 C3) gadget inside live ntdll — RIP is in ntdll at SYSCALL time, so hooked export entries are never reached.
 - Neutralizes in-memory API hooks (EDR user-mode detours) via KnownDlls-based unhooking (UDRL).
 
 **Sleep masking** (`pkg/sleepmask`):
