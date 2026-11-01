@@ -1,6 +1,6 @@
 # Dark Arts
 
-![Banner](banner.png)
+![Banner](banner_2.png)
 
 An asynchronous, mesh-capable command-and-control (C2) framework for laboratory research and authorized security testing.
 
